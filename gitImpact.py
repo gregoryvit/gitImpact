@@ -85,13 +85,13 @@ class RedmineFormatter(BaseTasksFormatter):
         for version, parents in print_data.iteritems():
             result_lines.append('* %s' % version)
             for parent, issues in parents.iteritems():
-                result_lines.append('** %s' % parent)
+                # result_lines.append('** %s' % parent)
                 sorted_issues = sorted(issues, key=lambda x: x['weight'], reverse=True)
                 for issue in sorted_issues:
                     task = issue['task']
                     result_lines.append(
-                        ('*** "%s – %s":%s (%f)' % (
-                            task.str_id, task.issue_name.encode('utf-8'), task.url, issue['weight'])).decode('utf-8')
+                        ('** "%s":%s – %s (%f)' % (
+                            task.str_id, task.url, task.issue_name.encode('utf-8'), issue['weight'])).decode('utf-8')
                     )
         return u'\n'.join(result_lines).encode('utf-8')
 
@@ -330,7 +330,7 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge_plain = '\t\t%s -> %s'
 
 
-def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], out_file_path=None):
+def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commit=None, min_weight=0.1, min_impact_rate=0.15):
     exclude_task_ids.append(task_id)
     task = RedmineTask(task_id, '%s' % REDMINE_HOST)
     git = GitImpactAnalysis(task, source_dir)
@@ -344,10 +344,12 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], out_file_path
 
     edges = {}
 
-    commits = git.get_affected_commits(task_id)
+    commits = git.get_affected_commits(task_id) if not commit else [commit]
     for commit in commits:
         # dot.node(commit, commit)
         for file_path in git.get_affected_files(commit):
+            if file_path in exclude_file_paths:
+                continue
             commits_per_file = set(git.get_commits_per_file(file_path))
             tasks_per_file = set(
                 [item for sublist in map(git.get_tasks_from_commit, commits_per_file) for item in sublist])
@@ -355,8 +357,8 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], out_file_path
             for task_to_exclude in filter(lambda task: task.raw_id in exclude_task_ids, tasks_per_file):
                 tasks_per_file.remove(task_to_exclude)
 
-            if not tasks_per_file or float(len(tasks_per_file)) / float(all_tasks_count) > 0.15:
-                # если кол-во затронутых тасков для файла больше 10% от общего числа тасков, то пропускаем
+            if not tasks_per_file or float(len(tasks_per_file)) / float(all_tasks_count) > min_impact_rate:
+                # если кол-во затронутых тасков для файла больше минимального значения от общего числа тасков, то пропускаем
                 continue
 
             dot.node(file_path, file_path)
@@ -380,7 +382,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], out_file_path
                 dot.edge(file_path, cur_task_id)
 
     dot.render('~/Development/Python/gitImpact/test.gv', view=False)
-    result_edges = [(task, weight) for task, weight in edges.iteritems()]
+    result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
 
     formatted_result = formatter.format_tasks(result_edges)
     print formatted_result
@@ -390,7 +392,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], out_file_path
             f.write(formatted_result)
 
 
-def main(task_id, source_dir):
+def main(task_id, source_dir, commit=None, min_weight=0.1, min_impact_rate=0.15):
     excluded_tasks = [
         "28025",
         "27573",
@@ -401,12 +403,21 @@ def main(task_id, source_dir):
         "26334",
         "35",
         "29129",
-        "28739"
+        "28739",
+        "24609",
+        "27663"
     ]
 
     formatter = RedmineFormatter()
     output_filepath = "test.txt"
-    mainGraph(task_id, source_dir, formatter, excluded_tasks)
+    exclide_file_paths = [
+        "NaviAddress/Resources/twine.txt",
+        "NaviAddress/Resources/en.lproj/Localizable.strings",
+        "NaviAddress/Library/Service Layer/Constants.swift",
+        "Podfile",
+        "Podfile.lock"
+    ]
+    mainGraph(task_id, source_dir, formatter, excluded_tasks, exclide_file_paths, commit=commit, min_weight=min_weight, min_impact_rate=min_impact_rate)
     return
 
     task = RedmineTask(task_id, REDMINE_HOST)
@@ -419,11 +430,3 @@ def main(task_id, source_dir):
     for task_data in mapped_tasks:
         print '%s | %s' % task_data
     print '---------------------------------'
-
-
-import sys
-
-if __name__ == "__main__":
-    args = sys.argv
-    task_id = args[1]
-    main(task_id, os.getcwd())
