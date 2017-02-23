@@ -84,15 +84,17 @@ class RedmineFormatter(BaseTasksFormatter):
 
         for version, parents in print_data.iteritems():
             result_lines.append('* %s' % version)
+            version_lines = []
             for parent, issues in parents.iteritems():
-                # result_lines.append('** %s' % parent)
-                sorted_issues = sorted(issues, key=lambda x: x['weight'], reverse=True)
-                for issue in sorted_issues:
+                for issue in issues:
                     task = issue['task']
-                    result_lines.append(
-                        ('** "%s":%s – %s (%f)' % (
-                            task.str_id, task.url, task.issue_name.encode('utf-8'), issue['weight'])).decode('utf-8')
+                    version_lines.append(
+                        (('** "%s":%s – %s (%f)' % (
+                            task.str_id, task.url, task.issue_name.encode('utf-8'), issue['weight'])).decode('utf-8'), issue['weight'])
                     )
+            version_lines = sorted(version_lines, key=lambda x: x[1], reverse=True)
+            for line, weight in version_lines:
+                result_lines.append(line)
         return u'\n'.join(result_lines).encode('utf-8')
 
 
@@ -133,7 +135,7 @@ class Task(object):
         re_pattern = re.compile(self.regex)
         match = re_pattern.findall(source_string)
         results = [self.make(result) for result in match]
-        return results
+        return list(set(results))
 
     def __str__(self):
         return self.str_id
@@ -240,8 +242,10 @@ class GitImpactAnalysis(object, ImpactAnalysis):
 
     def get_commits_per_file(self, file_path):
         try:
-            message = self.repo.git.log('--format=oneline', '--follow', file_path)
-            commits = map(lambda commit_str: commit_str.split(' ')[0], message.split('\n'))
+            message = self.repo.git.log('--numstat', '--format=oneline', '--follow', file_path)
+            lines = message.split('\n')
+            groups = zip(lines[::2], lines[1::2])
+            commits = {commit_str.split(' ')[0]: {"additions": stats.split('\t')[0], "deletions": stats.split('\t')[1]} for commit_str, stats in groups}
         except:
             commits = []
         return commits
@@ -329,7 +333,6 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge = '\t\t%s -> %s%s'
     _edge_plain = '\t\t%s -> %s'
 
-
 def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commit=None, min_weight=0.1, min_impact_rate=0.15):
     exclude_task_ids.append(task_id)
     task = RedmineTask(task_id, '%s' % REDMINE_HOST)
@@ -350,12 +353,25 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
         for file_path in git.get_affected_files(commit):
             if file_path in exclude_file_paths:
                 continue
-            commits_per_file = set(git.get_commits_per_file(file_path))
-            tasks_per_file = set(
-                [item for sublist in map(git.get_tasks_from_commit, commits_per_file) for item in sublist])
+            commits_per_file = git.get_commits_per_file(file_path)
 
-            for task_to_exclude in filter(lambda task: task.raw_id in exclude_task_ids, tasks_per_file):
-                tasks_per_file.remove(task_to_exclude)
+            total_affections = sum([int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
+
+            edits_per_file = [item for 
+                sublist in [
+                        map(lambda task: (task, int(affections['additions']) + int(affections['deletions'])),git.get_tasks_from_commit(commit))
+                        for commit, affections in commits_per_file.iteritems()
+                ] for item in sublist if item[0].raw_id not in exclude_task_ids]
+
+            def append_task_item(acc, item):
+                task, affections = item
+                if task not in acc:
+                    acc[task] = {'count': 0, 'affections': 0}
+
+                acc[task] = {'count': acc[task]['count'] + 1, 'affections': acc[task]['affections'] + affections}
+                return acc
+            tasks = reduce(append_task_item, edits_per_file, {})
+            tasks_per_file = tasks.keys()
 
             if not tasks_per_file or float(len(tasks_per_file)) / float(all_tasks_count) > min_impact_rate:
                 # если кол-во затронутых тасков для файла больше минимального значения от общего числа тасков, то пропускаем
@@ -370,7 +386,11 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
                     continue
                 cur_task_id = cur_task.str_id
 
-                file_weight = 1.0 / float(len(tasks_per_file) - 1) if len(tasks_per_file) > 1 else 1.0
+                task_file_edits = tasks[cur_task]['count']
+
+                affections_weight = float(tasks[cur_task]['affections']) / float(total_affections)
+                file_weight = task_file_edits / float(len(edits_per_file))
+                file_weight = file_weight + affections_weight * 0.5
 
                 if cur_task in edges:
                     edges_count = edges[cur_task] + file_weight
@@ -383,7 +403,6 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
 
     dot.render('~/Development/Python/gitImpact/test.gv', view=False)
     result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
-
     formatted_result = formatter.format_tasks(result_edges)
     print formatted_result
 
