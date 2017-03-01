@@ -15,11 +15,14 @@ if __name__ == "__main__":
                       help=u'Минимальный вес возвращаемых тасков.')
     parser.add_option("--min_impact_rate", dest="min_impact_rate", default=0.15,
                       help=u'Если кол-во затронутых тасков для файла больше 15% от общего числа тасков, то пропускаем. 1 – все файлы, 0 – без файлов')
+    parser.add_option("--all_commits", dest="check_all_commits", action="store_true", default=False,
+                      help=u'By default gitimpact checks only child commits')
 
     (options, args) = parser.parse_args()
     main(options.task_id, 
         os.getcwd(), 
-        commits=options.commit, 
+        commits=options.commit,
+        check_only_child_commits=(not bool(options.check_all_commits)),
         min_weight=float(options.min_weight), 
         min_impact_rate=float(options.min_impact_rate)
         )

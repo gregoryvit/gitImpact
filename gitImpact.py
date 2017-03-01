@@ -167,7 +167,7 @@ class ImpactAnalysis:
     def get_affected_files(self, commit):
         return []
 
-    def get_commits_per_file(self, file_path):
+    def get_commits_per_file(self, file_path, after=None):
         return []
 
     @staticmethod
@@ -240,14 +240,19 @@ class GitImpactAnalysis(object, ImpactAnalysis):
     def get_affected_files(self, commit):
         return self.repo.commit(commit).stats.files.keys()
 
-    def get_commits_per_file(self, file_path):
+    def get_commits_per_file(self, file_path, after=None):
         try:
-            message = self.repo.git.log('--numstat', '--format=oneline', '--follow', file_path)
+            params = ['--numstat', '--format=oneline']
+            if after:
+                params.append(after)
+            params.extend(['--follow', file_path])
+            message = self.repo.git.log(*params)
             lines = message.split('\n')
             groups = zip(lines[::2], lines[1::2])
             commits = {commit_str.split(' ')[0]: {"additions": stats.split('\t')[0], "deletions": stats.split('\t')[1]} for commit_str, stats in groups}
-        except:
-            commits = []
+        except Exception as e:
+            # print "%s\n" % e
+            commits = {}
         return commits
 
     def get_tasks_from_commit(self, commit):
@@ -333,7 +338,7 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge = '\t\t%s -> %s%s'
     _edge_plain = '\t\t%s -> %s'
 
-def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15):
+def mainGraph(task_id, source_dir, formatter, check_only_child_commits, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15):
     exclude_task_ids.append(task_id)
     task = RedmineTask(task_id, '%s' % REDMINE_HOST)
     git = GitImpactAnalysis(task, source_dir)
@@ -353,7 +358,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
         for file_path in git.get_affected_files(commit):
             if file_path in exclude_file_paths:
                 continue
-            commits_per_file = git.get_commits_per_file(file_path)
+            commits_per_file = git.get_commits_per_file(file_path, after=commit if check_only_child_commits else None)
 
             total_affections = sum([int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
 
@@ -411,7 +416,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
             f.write(formatted_result)
 
 
-def main(task_id, source_dir, commits=[], min_weight=0.1, min_impact_rate=0.15):
+def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0.1, min_impact_rate=0.15):
     excluded_tasks = [
         "28025",
         "27573",
@@ -429,14 +434,14 @@ def main(task_id, source_dir, commits=[], min_weight=0.1, min_impact_rate=0.15):
 
     formatter = RedmineFormatter()
     output_filepath = "test.txt"
-    exclide_file_paths = [
+    exclude_file_paths = [
         "NaviAddress/Resources/twine.txt",
         "NaviAddress/Resources/en.lproj/Localizable.strings",
         "NaviAddress/Library/Service Layer/Constants.swift",
         "Podfile",
         "Podfile.lock"
     ]
-    mainGraph(task_id, source_dir, formatter, excluded_tasks, exclide_file_paths, commits=commits, min_weight=min_weight, min_impact_rate=min_impact_rate)
+    mainGraph(task_id, source_dir, formatter, check_only_child_commits, excluded_tasks, exclude_file_paths, commits=commits, min_weight=min_weight, min_impact_rate=min_impact_rate)
     return
 
     task = RedmineTask(task_id, REDMINE_HOST)
