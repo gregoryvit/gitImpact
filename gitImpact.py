@@ -333,7 +333,7 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge = '\t\t%s -> %s%s'
     _edge_plain = '\t\t%s -> %s'
 
-def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commit=None, min_weight=0.1, min_impact_rate=0.15):
+def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15):
     exclude_task_ids.append(task_id)
     task = RedmineTask(task_id, '%s' % REDMINE_HOST)
     git = GitImpactAnalysis(task, source_dir)
@@ -347,8 +347,8 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
 
     edges = {}
 
-    commits = git.get_affected_commits(task_id) if not commit else [commit]
-    for commit in commits:
+    affected_commits = git.get_affected_commits(task_id) if not commits else commits
+    for commit in affected_commits:
         # dot.node(commit, commit)
         for file_path in git.get_affected_files(commit):
             if file_path in exclude_file_paths:
@@ -401,7 +401,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
                 dot.node(cur_task_id, "%s (%f)" % (cur_task_id, edges_count), URL=cur_task.url)
                 dot.edge(file_path, cur_task_id)
 
-    dot.render('~/Development/Python/gitImpact/test.gv', view=False)
+    dot.render('./test.gv', view=False)
     result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
     formatted_result = formatter.format_tasks(result_edges)
     print formatted_result
@@ -411,7 +411,7 @@ def mainGraph(task_id, source_dir, formatter, exclude_task_ids=[], exclude_file_
             f.write(formatted_result)
 
 
-def main(task_id, source_dir, commit=None, min_weight=0.1, min_impact_rate=0.15):
+def main(task_id, source_dir, commits=[], min_weight=0.1, min_impact_rate=0.15):
     excluded_tasks = [
         "28025",
         "27573",
@@ -436,7 +436,7 @@ def main(task_id, source_dir, commit=None, min_weight=0.1, min_impact_rate=0.15)
         "Podfile",
         "Podfile.lock"
     ]
-    mainGraph(task_id, source_dir, formatter, excluded_tasks, exclide_file_paths, commit=commit, min_weight=min_weight, min_impact_rate=min_impact_rate)
+    mainGraph(task_id, source_dir, formatter, excluded_tasks, exclide_file_paths, commits=commits, min_weight=min_weight, min_impact_rate=min_impact_rate)
     return
 
     task = RedmineTask(task_id, REDMINE_HOST)

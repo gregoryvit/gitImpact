@@ -9,7 +9,7 @@ if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-t", "--task", dest="task_id",
                       help="redmine task identifier")
-    parser.add_option("-c", "--commit", dest="commit", default=None,
+    parser.add_option("-c", "--commit", dest="commit", default=[], type=str, action='append',
                       help="SHA of commit")
     parser.add_option("--min_weight", dest="min_weight", default=0.1,
                       help=u'Минимальный вес возвращаемых тасков.')
@@ -19,7 +19,7 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
     main(options.task_id, 
         os.getcwd(), 
-        commit=options.commit, 
+        commits=options.commit, 
         min_weight=float(options.min_weight), 
         min_impact_rate=float(options.min_impact_rate)
         )
