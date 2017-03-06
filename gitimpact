@@ -23,6 +23,13 @@ if __name__ == "__main__":
                       help=u'Result issues count')
 
     (options, args) = parser.parse_args()
+
+    excluded_tasks = []
+
+    exclude_file_paths = []
+
+    output_filepath = "test.txt"
+
     print main(options.task_id, 
         os.getcwd(), 
         commits=options.commit,
@@ -30,5 +37,8 @@ if __name__ == "__main__":
         min_weight=float(options.min_weight), 
         min_impact_rate=float(options.min_impact_rate),
         silent=bool(options.silent),
-        limit=int(options.limit) if options.limit else None 
+        limit=int(options.limit) if options.limit else None,
+        excluded_tasks=excluded_tasks,
+        exclude_file_paths=exclude_file_paths,
+        output_filepath=output_filepath
         )

@@ -1,104 +1,15 @@
 # coding=utf-8
-
+REDMINE_HOST = ""
+REDMINE_BASE_URL = ""
+REDMINE_API_KEY = ""
 __author__ = 'gregoryvit'
 
 import pprint
 import os
 
 from git import Repo
-
+from formatters import *
 from redmine import Redmine
-
-
-class BaseTasksFormatter(object):
-    def __init__(self, silent):
-        self.silent = silent
-
-    def prepate_print_data(self, edges):
-        print_data = {}
-
-        for idx, edge_info in enumerate(edges):
-            task, weight = edge_info
-            try:
-                task.load_data()
-
-                issue_data = {
-                    'task': task,
-                    'weight': weight
-                }
-
-                version_name = task.version_name if task.version_name is not None else ''
-                parent_name = task.parent_name if task.parent_name is not None else ''
-
-                if version_name in print_data:
-                    version_data = print_data[version_name]
-
-                    if parent_name in version_data:
-                        parent_data = version_data[parent_name]
-                        parent_data.append(issue_data)
-                        version_data[parent_name] = parent_data
-                    else:
-                        version_data[parent_name] = [issue_data]
-
-                    print_data[version_name] = version_data
-                else:
-                    print_data[version_name] = {parent_name: [issue_data]}
-
-                if not self.silent:
-                    print "%s (%d/%d)" % (task.url, idx + 1, len(edges))
-            except Exception as e:
-                if not self.silent:
-                    print "%s (%d/%d) # %s" % (task.url, idx + 1, len(edges), e)
-
-        return print_data
-
-    def format_tasks(self, edges):
-        return ""
-
-
-class FriendlyFormatter(BaseTasksFormatter):
-    def __init__(self, silent):
-        BaseTasksFormatter.__init__(self, silent)
-
-    def format_tasks(self, edges):
-        result_lines = []
-        print_data = self.prepate_print_data(edges)
-
-        for version, parents in print_data.iteritems():
-            result_lines.append(version)
-            for parent, issues in parents.iteritems():
-                result_lines.append(u'\t%s' % parent)
-                sorted_issues = sorted(issues, key=lambda x: x['weight'], reverse=True)
-                for issue in sorted_issues:
-                    task = issue['task']
-                    result_lines.append(
-                        u'\t\t* %s – %s (%f)' % (task.issue_name, task.url, issue['weight']))
-        return u'\n'.join(result_lines).encode('utf-8')
-
-
-class RedmineFormatter(BaseTasksFormatter):
-    def __init__(self, silent):
-        BaseTasksFormatter.__init__(self, silent)
-
-    def format_tasks(self, edges):
-        result_lines = []
-        print_data = self.prepate_print_data(edges)
-
-        for version, parents in print_data.iteritems():
-            result_lines.append('* %s' % version)
-            version_lines = []
-            for parent, issues in parents.iteritems():
-                for issue in issues:
-                    task = issue['task']
-                    version_lines.append(
-                        (('** "%s":%s – %s (%f)' % (
-                            task.str_id, task.url, task.issue_name.encode('utf-8'), issue['weight'])).decode('utf-8'), issue['weight'])
-                    )
-            version_lines = sorted(version_lines, key=lambda x: x[1], reverse=True)
-            for line, weight in version_lines:
-                result_lines.append(line)
-        return u'\n'.join(result_lines).encode('utf-8')
-
 
 class BugTrackerIssue():
     def __init__(self, id, host, key):
@@ -428,32 +339,20 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
     return formatted_result
 
 
-
-def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None):
-    excluded_tasks = [
-        "28025",
-        "27573",
-        "28290",
-        "26432",
-        "29883",
-        "25792",
-        "26334",
-        "35",
-        "29129",
-        "28739",
-        "24609",
-        "27663"
-    ]
+def main(
+    task_id, 
+    source_dir, 
+    check_only_child_commits, 
+    commits=[], 
+    min_weight=0.1, 
+    min_impact_rate=0.15, 
+    silent=False, 
+    limit=None, 
+    excluded_tasks=[], 
+    exclude_file_paths=[],
+    output_filepath=None):
 
     formatter = RedmineFormatter(silent)
-    output_filepath = "test.txt"
-    exclude_file_paths = [
-        "NaviAddress/Resources/twine.txt",
-        "NaviAddress/Resources/en.lproj/Localizable.strings",
-        "NaviAddress/Library/Service Layer/Constants.swift",
-        "Podfile",
-        "Podfile.lock"
-    ]
     return mainGraph(
         task_id, 
         source_dir, 
@@ -467,14 +366,3 @@ def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0
         silent=silent, 
         limit=limit
     )
-
-    task = RedmineTask(task_id, REDMINE_HOST)
-
-    git = GitImpactAnalysis(task, source_dir)
-
-    tasks = git.get_impacted_tasks()
-    mapped_tasks = [(task.url, weight) for (task, weight) in tasks]
-
-    for task_data in mapped_tasks:
-        print '%s | %s' % task_data
-    print '---------------------------------'
