@@ -5,6 +5,24 @@ from gitImpact import *
 from optparse import OptionParser
 import os
 
+def parse_yaml(path_to_yaml_file):
+  import ruamel.yaml
+
+  with open(path_to_yaml_file, 'r') as yaml_file:
+    try:
+        return ruamel.yaml.load(yaml_file, Loader=ruamel.yaml.Loader)
+    except ruamel.yaml.YAMLError as exc:
+        print(exc)
+
+def get_option(option, config, alt=None, default=None):
+  if alt is not None and alt != default:
+    return alt
+
+  if option in config:
+    return config[option]
+
+  return default
+
 if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-t", "--task", dest="task_id",
@@ -21,24 +39,32 @@ if __name__ == "__main__":
                       help=u'Print only formatted result')
     parser.add_option("-n", dest="limit", default=None,
                       help=u'Result issues count')
+    parser.add_option("--config", dest="yaml_config_file", default=os.path.join(os.getcwd(), ".gitimpact.yml"),
+                      help=u'Path to yaml configuration file')
+    parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
+                      help=u'Path to git repository')
 
     (options, args) = parser.parse_args()
 
-    excluded_tasks = []
+    yaml_config = parse_yaml(options.yaml_config_file)
 
-    exclude_file_paths = []
+    result_options = {
+      "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
+      "exclude_file_paths": get_option("exclude_file_paths", yaml_config, default=[]),
+      "output_filepath": get_option("output_filepath", yaml_config),
+      "task_id": get_option("task_id", yaml_config, alt=options.task_id),
+      "commits": get_option("commits", yaml_config, alt=options.commit, default=[]),
+      "min_weight": float(get_option("min_weight", yaml_config, alt=options.min_weight, default=0.1)),
+      "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=options.min_impact_rate, default=0.15),
+      "silent": get_option("silent", yaml_config, alt=options.silent, default=False),
+      "source_dir": options.repo_path
+    }
 
-    output_filepath = "test.txt"
+    check_all_commits = get_option("check_all_commits", yaml_config, alt=options.check_all_commits, default=False)
+    result_options["check_only_child_commits"] = (not bool(check_all_commits))
 
-    print main(options.task_id, 
-        os.getcwd(), 
-        commits=options.commit,
-        check_only_child_commits=(not bool(options.check_all_commits)),
-        min_weight=float(options.min_weight), 
-        min_impact_rate=float(options.min_impact_rate),
-        silent=bool(options.silent),
-        limit=int(options.limit) if options.limit else None,
-        excluded_tasks=excluded_tasks,
-        exclude_file_paths=exclude_file_paths,
-        output_filepath=output_filepath
-        )
+    limit = get_option("limit", yaml_config, alt=options.limit)
+    if limit:
+      result_options["limit"] = int(limit)
+
+    print main(**result_options)

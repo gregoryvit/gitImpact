@@ -1,2 +1,3 @@
 gitpython
 python-redmine
+ruamel.yaml
