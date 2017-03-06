@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/local/opt/python/bin/python2.7
 # coding=utf-8
 
 from gitImpact import *
@@ -17,12 +17,18 @@ if __name__ == "__main__":
                       help=u'Если кол-во затронутых тасков для файла больше 15% от общего числа тасков, то пропускаем. 1 – все файлы, 0 – без файлов')
     parser.add_option("--all_commits", dest="check_all_commits", action="store_true", default=False,
                       help=u'By default gitimpact checks only child commits')
+    parser.add_option("--silent", dest="silent", action="store_true", default=False,
+                      help=u'Print only formatted result')
+    parser.add_option("-n", dest="limit", default=None,
+                      help=u'Result issues count')
 
     (options, args) = parser.parse_args()
-    main(options.task_id, 
+    print main(options.task_id, 
         os.getcwd(), 
         commits=options.commit,
         check_only_child_commits=(not bool(options.check_all_commits)),
         min_weight=float(options.min_weight), 
-        min_impact_rate=float(options.min_impact_rate)
+        min_impact_rate=float(options.min_impact_rate),
+        silent=bool(options.silent),
+        limit=int(options.limit) if options.limit else None 
         )

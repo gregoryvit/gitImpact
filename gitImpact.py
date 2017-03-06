@@ -11,8 +11,8 @@ from redmine import Redmine
 
 
 class BaseTasksFormatter(object):
-    def __init__(self):
-        pass
+    def __init__(self, silent):
+        self.silent = silent
 
     def prepate_print_data(self, edges):
         print_data = {}
@@ -44,9 +44,11 @@ class BaseTasksFormatter(object):
                 else:
                     print_data[version_name] = {parent_name: [issue_data]}
 
-                print "%s (%d/%d)" % (task.url, idx + 1, len(edges))
+                if not self.silent:
+                    print "%s (%d/%d)" % (task.url, idx + 1, len(edges))
             except Exception as e:
-                print "%s (%d/%d) # %s" % (task.url, idx + 1, len(edges), e)
+                if not self.silent:
+                    print "%s (%d/%d) # %s" % (task.url, idx + 1, len(edges), e)
 
         return print_data
 
@@ -55,8 +57,8 @@ class BaseTasksFormatter(object):
 
 
 class FriendlyFormatter(BaseTasksFormatter):
-    def __init__(self):
-        BaseTasksFormatter.__init__(self)
+    def __init__(self, silent):
+        BaseTasksFormatter.__init__(self, silent)
 
     def format_tasks(self, edges):
         result_lines = []
@@ -75,8 +77,8 @@ class FriendlyFormatter(BaseTasksFormatter):
 
 
 class RedmineFormatter(BaseTasksFormatter):
-    def __init__(self):
-        BaseTasksFormatter.__init__(self)
+    def __init__(self, silent):
+        BaseTasksFormatter.__init__(self, silent)
 
     def format_tasks(self, edges):
         result_lines = []
@@ -249,7 +251,12 @@ class GitImpactAnalysis(object, ImpactAnalysis):
             message = self.repo.git.log(*params)
             lines = message.split('\n')
             groups = zip(lines[::2], lines[1::2])
-            commits = {commit_str.split(' ')[0]: {"additions": stats.split('\t')[0], "deletions": stats.split('\t')[1]} for commit_str, stats in groups}
+            def get_int_value(value):
+                try: 
+                    return int(value)
+                except:
+                    return 0
+            commits = {commit_str.split(' ')[0]: {"additions": get_int_value(stats.split('\t')[0]), "deletions": get_int_value(stats.split('\t')[1])} for commit_str, stats in groups}
         except Exception as e:
             # print "%s\n" % e
             commits = {}
@@ -338,7 +345,8 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge = '\t\t%s -> %s%s'
     _edge_plain = '\t\t%s -> %s'
 
-def mainGraph(task_id, source_dir, formatter, check_only_child_commits, exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15):
+def mainGraph(task_id, source_dir, formatter, check_only_child_commits, 
+    exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None):
     exclude_task_ids.append(task_id)
     task = RedmineTask(task_id, '%s' % REDMINE_HOST)
     git = GitImpactAnalysis(task, source_dir)
@@ -347,8 +355,8 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits, exclude_
     dot.graph_attr['rankdir'] = 'LR'
 
     all_tasks_count = len(git.get_all_tasks())
-
-    print "Total tasks: %d" % all_tasks_count
+    if not silent:
+        print "Total tasks: %d" % all_tasks_count
 
     edges = {}
 
@@ -406,17 +414,22 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits, exclude_
                 dot.node(cur_task_id, "%s (%f)" % (cur_task_id, edges_count), URL=cur_task.url)
                 dot.edge(file_path, cur_task_id)
 
-    dot.render('./test.gv', view=False)
+    # dot.render('./test.gv', view=False)
     result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
+    result_edges = sorted(result_edges, key=lambda x: x[1], reverse=True)
+    if limit:
+        result_edges = result_edges[:limit]
     formatted_result = formatter.format_tasks(result_edges)
-    print formatted_result
 
     if out_file_path is not None:
         with open(out_file_path, "w+") as f:
             f.write(formatted_result)
 
+    return formatted_result
 
-def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0.1, min_impact_rate=0.15):
+
+
+def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None):
     excluded_tasks = [
         "28025",
         "27573",
@@ -432,7 +445,7 @@ def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0
         "27663"
     ]
 
-    formatter = RedmineFormatter()
+    formatter = RedmineFormatter(silent)
     output_filepath = "test.txt"
     exclude_file_paths = [
         "NaviAddress/Resources/twine.txt",
@@ -441,8 +454,19 @@ def main(task_id, source_dir, check_only_child_commits, commits=[], min_weight=0
         "Podfile",
         "Podfile.lock"
     ]
-    mainGraph(task_id, source_dir, formatter, check_only_child_commits, excluded_tasks, exclude_file_paths, commits=commits, min_weight=min_weight, min_impact_rate=min_impact_rate)
-    return
+    return mainGraph(
+        task_id, 
+        source_dir, 
+        formatter, 
+        check_only_child_commits, 
+        excluded_tasks, 
+        exclude_file_paths, 
+        commits=commits, 
+        min_weight=min_weight, 
+        min_impact_rate=min_impact_rate, 
+        silent=silent, 
+        limit=limit
+    )
 
     task = RedmineTask(task_id, REDMINE_HOST)
 
