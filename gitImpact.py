@@ -197,17 +197,17 @@ def get_task(string, task_format):
     return m.group(0)
 
 
-import graphviz
+# import graphviz
 
 
-class StrictDigraph(graphviz.dot.Dot):
-    """Directed graph source code in the DOT language."""
+# class StrictDigraph(graphviz.dot.Dot):
+#     """Directed graph source code in the DOT language."""
 
-    __doc__ += graphviz.Graph.__doc__.partition('.')[2]
+#     __doc__ += graphviz.Graph.__doc__.partition('.')[2]
 
-    _head = 'strict digraph %s{'
-    _edge = '\t\t%s -> %s%s'
-    _edge_plain = '\t\t%s -> %s'
+#     _head = 'strict digraph %s{'
+#     _edge = '\t\t%s -> %s%s'
+#     _edge_plain = '\t\t%s -> %s'
 
 def mainGraph(task_id, source_dir, formatter, check_only_child_commits, 
     exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
