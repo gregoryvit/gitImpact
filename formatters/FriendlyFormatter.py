@@ -3,8 +3,8 @@
 from BaseTasksFormatter import *
 
 class FriendlyFormatter(BaseTasksFormatter):
-    def __init__(self, silent):
-        BaseTasksFormatter.__init__(self, silent)
+    def __init__(self, silent, issues_generator):
+        BaseTasksFormatter.__init__(self, silent, issues_generator)
 
     def format_tasks(self, edges):
         result_lines = []
@@ -16,7 +16,7 @@ class FriendlyFormatter(BaseTasksFormatter):
                 result_lines.append(u'\t%s' % parent)
                 sorted_issues = sorted(issues, key=lambda x: x['weight'], reverse=True)
                 for issue in sorted_issues:
-                    task = issue['task']
+                    task = issue['issue']
                     result_lines.append(
-                        u'\t\t* %s – %s (%f)' % (task.issue_name, task.url, issue['weight']))
+                        (u'\t\t* %s – %s (%f)' % (task.issue_name, task.url, issue['weight'])))
         return u'\n'.join(result_lines).encode('utf-8')

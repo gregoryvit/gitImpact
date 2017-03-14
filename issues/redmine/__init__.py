@@ -1,8 +1,18 @@
+from .. import *
 from redmine import Redmine
 
-class BugTrackerIssue():
+class RedmineIssuesGenerator(BugTrackerIssuesGenerator):
+    def __init__(self, host, key):
+        BugTrackerIssuesGenerator.__init__(self)
+        self.host = host
+        self.api_key = key
+
+    def create_issue(self, id):
+        return RedmineIssue(id, self.host, self.api_key)
+
+class RedmineIssue(BugTrackerIssue):
     def __init__(self, id, host, key):
-        self.id = id
+        BugTrackerIssue.__init__(self, id)
         self.redmine_api = Redmine('https://%s' % host, key=key)
         self.parent_name = None
         self.issue_name = None
@@ -17,13 +27,13 @@ class BugTrackerIssue():
         issue = self.redmine_api.issue.get(self.id)
         self.fill_data(issue)
 
-    def fill_data(self, issue):
-        self.issue_name = issue.subject
+    def fill_data(self, bugtracker_issue):
+        self.issue_name = bugtracker_issue.subject
 
-        if issue.parent.id is not None:
-            parent_issue = self.redmine_api.issue.get(issue.parent.id)
+        if bugtracker_issue.parent.id is not None:
+            parent_issue = self.redmine_api.issue.get(bugtracker_issue.parent.id)
             self.parent_name = parent_issue.subject
-            self.version_name = issue.fixed_version.name
+            self.version_name = bugtracker_issue.fixed_version.name
 
     @staticmethod
     def load_issues(issues, redmine_api):

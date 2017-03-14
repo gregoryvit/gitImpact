@@ -295,6 +295,7 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
 def main(
     task_id, 
     source_dir, 
+    formatter,
     check_only_child_commits, 
     commits=[], 
     min_weight=0.1, 
@@ -306,7 +307,6 @@ def main(
     output_filepath=None,
     task_format=('', '')):
 
-    formatter = RedmineFormatter(silent)
     return mainGraph(
         task_id, 
         source_dir, 

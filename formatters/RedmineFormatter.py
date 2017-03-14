@@ -3,8 +3,8 @@
 from BaseTasksFormatter import *
 
 class RedmineFormatter(BaseTasksFormatter):
-    def __init__(self, silent):
-        BaseTasksFormatter.__init__(self, silent)
+    def __init__(self, silent, issues_generator):
+        BaseTasksFormatter.__init__(self, silent, issues_generator)
 
     def format_tasks(self, edges):
         result_lines = []
@@ -15,10 +15,10 @@ class RedmineFormatter(BaseTasksFormatter):
             version_lines = []
             for parent, issues in parents.iteritems():
                 for issue in issues:
-                    task = issue['task']
+                    task = issue['issue']
                     version_lines.append(
-                        (('** "%s":%s – %s (%f)' % (
-                            task.str_id, task.url, task.issue_name.encode('utf-8'), issue['weight'])).decode('utf-8'), issue['weight'])
+                        ((u'** "%s":%s – %s (%f)' % (
+                            task.id, task.url, task.issue_name, issue['weight'])), issue['weight'])
                     )
             version_lines = sorted(version_lines, key=lambda x: x[1], reverse=True)
             for line, weight in version_lines:

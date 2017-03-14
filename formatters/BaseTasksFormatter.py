@@ -1,6 +1,9 @@
+from issues import *
+
 class BaseTasksFormatter(object):
-    def __init__(self, silent):
+    def __init__(self, silent, issues_generator):
         self.silent = silent
+        self.issues_generator = issues_generator
 
     def prepate_print_data(self, edges):
         print_data = {}
@@ -12,12 +15,13 @@ class BaseTasksFormatter(object):
         # items = [item for item in items if int(item[1].id) in task_ids]
         # print items
         for idx, task, weight in items:
-            issue = BugTrackerIssue(task.raw_id, REDMINE_HOST, REDMINE_API_KEY)
+            issue = self.issues_generator.create_issue(task.raw_id)
             try:
                 issue.load_data()
 
                 issue_data = {
                     'task': task,
+                    'issue': issue,
                     'weight': weight
                 }
 

@@ -23,6 +23,23 @@ def get_option(option, config, alt=None, default=None):
 
   return default
 
+def get_formatter(formatter_options, silent):
+  if "type" in formatter_options:
+    formatter_type = formatter_options["type"]
+    
+    if "generator" in formatter_options:
+
+      from issues.redmine import RedmineIssuesGenerator
+
+      generator_options = formatter_options["generator"]
+      issues_generator = RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
+    
+    if formatter_type == "redmine_formatter":
+      return RedmineFormatter(silent, issues_generator)
+    if formatter_type == "friendly_formatter":
+      return FriendlyFormatter(silent, issues_generator)
+  return None
+
 if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-t", "--task", dest="task_id",
@@ -65,6 +82,7 @@ if __name__ == "__main__":
 
     check_all_commits = get_option("check_all_commits", yaml_config, alt=options.check_all_commits, default=False)
     result_options["check_only_child_commits"] = (not bool(check_all_commits))
+    result_options["formatter"] = get_formatter(get_option("formatter", yaml_config, default={}), result_options["silent"])
 
     limit = get_option("limit", yaml_config, alt=options.limit)
     if limit:
