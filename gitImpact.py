@@ -1,7 +1,4 @@
 # coding=utf-8
-REDMINE_HOST = ""
-REDMINE_BASE_URL = ""
-REDMINE_API_KEY = ""
 __author__ = 'gregoryvit'
 
 import pprint
@@ -9,39 +6,16 @@ import os
 
 from git import Repo
 from formatters import *
-from redmine import Redmine
-
-class BugTrackerIssue():
-    def __init__(self, id, host, key):
-        self.id = id
-        self.redmine_api = Redmine('https://%s' % host, key=key)
-        self.parent_name = None
-        self.issue_name = None
-        self.version_name = None
-
-    def load_data(self):
-        self.parent_name = None
-        self.issue_name = None
-        self.version_name = None
-
-        issue = self.redmine_api.issue.get(self.id)
-        self.issue_name = issue.subject
-
-        if issue.parent.id is not None:
-            parent_issue = self.redmine_api.issue.get(issue.parent.id)
-            self.parent_name = parent_issue.subject
-            self.version_name = issue.fixed_version.name
-
 
 class Task(object):
-    def __init__(self, id, format='', regex='', url_format=''):
+    def __init__(self, id, format='', regex=''):
         self.raw_id = id
-        self.str_id = format.format(id)
-        self.url = url_format.format(id)
+        self.format = format
+        self.str_id = format.format(self.raw_id)
         self.regex = regex
 
     def make(self, id):
-        return Task(id)
+        return Task(id, self.format, self.regex)
 
     def parse_tasks(self, source_string):
         import re
@@ -58,17 +32,6 @@ class Task(object):
 
     def __eq__(self, other):
         return hash(self.raw_id) == hash(other.raw_id)
-
-
-class RedmineTask(Task, BugTrackerIssue):
-    def __init__(self, id, host):
-        Task.__init__(self, id, '#{}', '#([0-9]+)', 'https://%s/issues/{}' % host)
-        BugTrackerIssue.__init__(self, id, host, REDMINE_API_KEY)
-        self.host = host
-
-    def make(self, id):
-        return RedmineTask(id, self.host)
-
 
 class ImpactAnalysis:
     def __init__(self, task):
@@ -190,9 +153,6 @@ class GitImpactAnalysis(object, ImpactAnalysis):
         return acc
 
 
-SOURCE_DIR = '/Users/gregoryvit/Development/Swift/surf/NaviAddress-iOS/'
-
-
 def get_commits(repo):
     return [commit for commit in repo.iter_commits()]
 
@@ -229,19 +189,12 @@ def commits_filtered(repo, substring):
     return filter(lambda string: len(string) > 0, commits)
 
 
-TASK_FORMAT = '#[0-9]+'
-
-
 def get_task(string, task_format):
     import re
     m = re.search(task_format, string)
     if m is None:
         return None
     return m.group(0)
-
-
-def links(task_ids):
-    return map(lambda task_id: REDMINE_BASE_URL + '/issues/' + task_id.replace('#', ''), task_ids)
 
 
 import graphviz
@@ -257,13 +210,13 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge_plain = '\t\t%s -> %s'
 
 def mainGraph(task_id, source_dir, formatter, check_only_child_commits, 
-    exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None):
+    exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
     exclude_task_ids.append(task_id)
-    task = RedmineTask(task_id, '%s' % REDMINE_HOST)
-    git = GitImpactAnalysis(task, source_dir)
+    original_task = Task(task_id, format=task_format[0], regex=task_format[1])
+    git = GitImpactAnalysis(original_task, source_dir)
 
-    dot = StrictDigraph(comment='The Round Table', engine='dot', format='svg')
-    dot.graph_attr['rankdir'] = 'LR'
+    # dot = StrictDigraph(comment='The Round Table', engine='dot', format='svg')
+    # dot.graph_attr['rankdir'] = 'LR'
 
     all_tasks_count = len(git.get_all_tasks())
     if not silent:
@@ -271,7 +224,7 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
 
     edges = {}
 
-    affected_commits = git.get_affected_commits(task_id) if not commits else commits
+    affected_commits = git.get_affected_commits(original_task.str_id) if not commits else commits
     for commit in affected_commits:
         # dot.node(commit, commit)
         for file_path in git.get_affected_files(commit):
@@ -301,12 +254,12 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
                 # если кол-во затронутых тасков для файла больше минимального значения от общего числа тасков, то пропускаем
                 continue
 
-            dot.node(file_path, file_path)
-            # dot.edge(commit, file_path)
-            dot.edge(task.str_id, file_path)
+            # dot.node(file_path, file_path)
+            ## dot.edge(commit, file_path)
+            # dot.edge(original_task.str_id, file_path)
 
             for cur_task in tasks_per_file:
-                if cur_task.str_id == task.str_id:
+                if cur_task.str_id == original_task.str_id:
                     continue
                 cur_task_id = cur_task.str_id
 
@@ -322,8 +275,8 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
                     edges_count = file_weight
                 edges[cur_task] = edges_count
 
-                dot.node(cur_task_id, "%s (%f)" % (cur_task_id, edges_count), URL=cur_task.url)
-                dot.edge(file_path, cur_task_id)
+                # dot.node(cur_task_id, "%s (%f)" % (cur_task_id, edges_count), URL=cur_task.url)
+                # dot.edge(file_path, cur_task_id)
 
     # dot.render('./test.gv', view=False)
     result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
@@ -350,7 +303,8 @@ def main(
     limit=None, 
     excluded_tasks=[], 
     exclude_file_paths=[],
-    output_filepath=None):
+    output_filepath=None,
+    task_format=('', '')):
 
     formatter = RedmineFormatter(silent)
     return mainGraph(
@@ -364,5 +318,6 @@ def main(
         min_weight=min_weight, 
         min_impact_rate=min_impact_rate, 
         silent=silent, 
-        limit=limit
+        limit=limit,
+        task_format=task_format
     )

@@ -48,6 +48,8 @@ if __name__ == "__main__":
 
     yaml_config = parse_yaml(options.yaml_config_file)
 
+    task_format = get_option("task_format", yaml_config, default={})
+
     result_options = {
       "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
       "exclude_file_paths": get_option("exclude_file_paths", yaml_config, default=[]),
@@ -57,7 +59,8 @@ if __name__ == "__main__":
       "min_weight": float(get_option("min_weight", yaml_config, alt=options.min_weight, default=0.1)),
       "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=options.min_impact_rate, default=0.15),
       "silent": get_option("silent", yaml_config, alt=options.silent, default=False),
-      "source_dir": options.repo_path
+      "source_dir": options.repo_path,
+      "task_format": (get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))
     }
 
     check_all_commits = get_option("check_all_commits", yaml_config, alt=options.check_all_commits, default=False)

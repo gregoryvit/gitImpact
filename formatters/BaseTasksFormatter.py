@@ -5,18 +5,24 @@ class BaseTasksFormatter(object):
     def prepate_print_data(self, edges):
         print_data = {}
 
-        for idx, edge_info in enumerate(edges):
-            task, weight = edge_info
+        items = [(idx, edge_info[0], edge_info[1]) for idx, edge_info in enumerate(edges)]
+        # tasks = [task for _, task, _ in items]
+
+        # task_ids = BugTrackerIssue.load_issues(tasks, tasks[0].redmine_api)
+        # items = [item for item in items if int(item[1].id) in task_ids]
+        # print items
+        for idx, task, weight in items:
+            issue = BugTrackerIssue(task.raw_id, REDMINE_HOST, REDMINE_API_KEY)
             try:
-                task.load_data()
+                issue.load_data()
 
                 issue_data = {
                     'task': task,
                     'weight': weight
                 }
 
-                version_name = task.version_name if task.version_name is not None else ''
-                parent_name = task.parent_name if task.parent_name is not None else ''
+                version_name = issue.version_name if issue.version_name is not None else ''
+                parent_name = issue.parent_name if issue.parent_name is not None else ''
 
                 if version_name in print_data:
                     version_data = print_data[version_name]
@@ -33,10 +39,10 @@ class BaseTasksFormatter(object):
                     print_data[version_name] = {parent_name: [issue_data]}
 
                 if not self.silent:
-                    print "%s (%d/%d)" % (task.url, idx + 1, len(edges))
+                    print "%s (%d/%d)" % (issue.url, idx + 1, len(edges))
             except Exception as e:
                 if not self.silent:
-                    print "%s (%d/%d) # %s" % (task.url, idx + 1, len(edges), e)
+                    print "%s (%d/%d) # %s" % (issue.url, idx + 1, len(edges), e)
 
         return print_data
 
