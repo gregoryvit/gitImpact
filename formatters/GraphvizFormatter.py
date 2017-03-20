@@ -12,12 +12,13 @@ class StrictDigraph(graphviz.dot.Dot):
     _edge_plain = '\t\t%s -> %s'
 
 class GraphvizFormatter(BaseFormatter):
-    def __init__(self, silent, output_filepath):
+    def __init__(self, silent, output_filepath, output_format):
         BaseFormatter.__init__(self, silent)
         self.output_filepath = output_filepath
+        self.output_format = output_format
 
     def format_tasks(self, source_tasks, commits, features, result_tasks):
-        dot = StrictDigraph(comment='The Round Table', engine='dot', format='svg')
+        dot = StrictDigraph(comment='', engine='dot', format=self.output_format)
         dot.graph_attr['rankdir'] = 'LR'
 
         for feature, tasks in features.iteritems():
