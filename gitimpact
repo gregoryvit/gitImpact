@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     result_options = {
       "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
-      "exclude_file_paths": get_option("exclude_file_paths", yaml_config, default=[]),
+      "exclude_features": get_option("exclude_features", yaml_config, default=[]),
       "output_filepath": get_option("output_filepath", yaml_config),
       "task_id": get_option("task_id", yaml_config, alt=options.task_id),
       "commits": get_option("commits", yaml_config, alt=options.commit, default=[]),

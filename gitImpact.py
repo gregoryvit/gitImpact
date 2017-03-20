@@ -197,7 +197,7 @@ def get_task(string, task_format):
     return m.group(0)
 
 def mainGraph(task_id, source_dir, formatters, check_only_child_commits, 
-    exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
+    exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
     exclude_task_ids.append(task_id)
     original_task = Task(task_id, format=task_format[0], regex=task_format[1])
     git = GitImpactAnalysis(original_task, source_dir)
@@ -215,13 +215,11 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
 
     affected_commits = git.get_affected_commits(original_task.str_id) if not commits else commits
     for current_commit in affected_commits:
-        # dot.node(commit, commit)
-
         commits[current_commit] = []
         print commits
 
         for file_path in git.get_affected_files(current_commit):
-            if file_path in exclude_file_paths:
+            if file_path in exclude_features:
                 continue
             commits_per_file = git.get_commits_per_file(file_path, after=current_commit if check_only_child_commits else None)
 
@@ -248,10 +246,6 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
             if not tasks_per_file or float(len(tasks_per_file)) / float(all_tasks_count) > min_impact_rate:
                 # если кол-во затронутых тасков для файла больше минимального значения от общего числа тасков, то пропускаем
                 continue
-
-            # dot.node(file_path, file_path)
-            ## dot.edge(commit, file_path)
-            # dot.edge(original_task.str_id, file_path)
 
             for cur_task in tasks_per_file:
                 if cur_task.str_id == original_task.str_id:
@@ -298,7 +292,7 @@ def main(
     silent=False, 
     limit=None, 
     excluded_tasks=[], 
-    exclude_file_paths=[],
+    exclude_features=[],
     output_filepath=None,
     task_format=('', '')):
 
@@ -308,7 +302,7 @@ def main(
         formatters, 
         check_only_child_commits, 
         excluded_tasks, 
-        exclude_file_paths, 
+        exclude_features, 
         commits=commits, 
         min_weight=min_weight, 
         min_impact_rate=min_impact_rate, 
