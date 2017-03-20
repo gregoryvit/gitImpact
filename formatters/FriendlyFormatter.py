@@ -3,12 +3,12 @@
 from BaseTasksFormatter import *
 
 class FriendlyFormatter(BaseTasksFormatter):
-    def __init__(self, silent, issues_generator):
-        BaseTasksFormatter.__init__(self, silent, issues_generator)
+    def __init__(self, silent, issues_generator, output_filepath):
+        BaseTasksFormatter.__init__(self, silent, issues_generator, output_filepath)
 
-    def format_tasks(self, edges):
+    def format_tasks(self, source_tasks, commits, features, result_tasks):
         result_lines = []
-        print_data = self.prepate_print_data(edges)
+        print_data = self.prepate_print_data(result_tasks)
 
         for version, parents in print_data.iteritems():
             result_lines.append(version)
@@ -19,4 +19,6 @@ class FriendlyFormatter(BaseTasksFormatter):
                     task = issue['issue']
                     result_lines.append(
                         (u'\t\t* %s – %s (%f)' % (task.issue_name, task.url, issue['weight'])))
-        return u'\n'.join(result_lines).encode('utf-8')
+        result = u'\n'.join(result_lines).encode('utf-8')
+        self.save(result)
+        return result

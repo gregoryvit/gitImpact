@@ -196,41 +196,36 @@ def get_task(string, task_format):
         return None
     return m.group(0)
 
-
-# import graphviz
-
-
-# class StrictDigraph(graphviz.dot.Dot):
-#     """Directed graph source code in the DOT language."""
-
-#     __doc__ += graphviz.Graph.__doc__.partition('.')[2]
-
-#     _head = 'strict digraph %s{'
-#     _edge = '\t\t%s -> %s%s'
-#     _edge_plain = '\t\t%s -> %s'
-
 def mainGraph(task_id, source_dir, formatter, check_only_child_commits, 
     exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
     exclude_task_ids.append(task_id)
     original_task = Task(task_id, format=task_format[0], regex=task_format[1])
     git = GitImpactAnalysis(original_task, source_dir)
 
-    # dot = StrictDigraph(comment='The Round Table', engine='dot', format='svg')
-    # dot.graph_attr['rankdir'] = 'LR'
-
     all_tasks_count = len(git.get_all_tasks())
     if not silent:
         print "Total tasks: %d" % all_tasks_count
 
+    source_tasks = {}
+    commits = {}
+    features = {}
     edges = {}
 
+    source_tasks[task_id] = []
+
     affected_commits = git.get_affected_commits(original_task.str_id) if not commits else commits
-    for commit in affected_commits:
+    for current_commit in affected_commits:
         # dot.node(commit, commit)
-        for file_path in git.get_affected_files(commit):
+
+        commits[current_commit] = []
+        print commits
+
+        for file_path in git.get_affected_files(current_commit):
             if file_path in exclude_file_paths:
                 continue
-            commits_per_file = git.get_commits_per_file(file_path, after=commit if check_only_child_commits else None)
+            commits_per_file = git.get_commits_per_file(file_path, after=current_commit if check_only_child_commits else None)
+
+            features[file_path] = []
 
             total_affections = sum([int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
 
@@ -275,19 +270,20 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
                     edges_count = file_weight
                 edges[cur_task] = edges_count
 
-                # dot.node(cur_task_id, "%s (%f)" % (cur_task_id, edges_count), URL=cur_task.url)
-                # dot.edge(file_path, cur_task_id)
+                if current_commit not in source_tasks[task_id]:
+                    source_tasks[task_id].append(current_commit)
 
-    # dot.render('./test.gv', view=False)
+                if file_path not in commits[current_commit]:
+                    commits[current_commit].append(file_path)
+
+                if cur_task not in features[file_path]:
+                    features[file_path].append(cur_task)
+
     result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
     result_edges = sorted(result_edges, key=lambda x: x[1], reverse=True)
     if limit:
         result_edges = result_edges[:limit]
-    formatted_result = formatter.format_tasks(result_edges)
-
-    if out_file_path is not None:
-        with open(out_file_path, "w+") as f:
-            f.write(formatted_result)
+    formatted_result = formatter.format_tasks(source_tasks, commits, features, result_edges)
 
     return formatted_result
 

@@ -1,9 +1,10 @@
-from issues import *
+from BaseFormatter import *
 
-class BaseTasksFormatter(object):
-    def __init__(self, silent, issues_generator):
-        self.silent = silent
+class BaseTasksFormatter(BaseFormatter):
+    def __init__(self, silent, issues_generator, output_filepath):
+        BaseFormatter.__init__(self, silent)
         self.issues_generator = issues_generator
+        self.output_filepath = output_filepath
 
     def prepate_print_data(self, edges):
         print_data = {}
@@ -50,5 +51,13 @@ class BaseTasksFormatter(object):
 
         return print_data
 
-    def format_tasks(self, edges):
+
+    def save(self, data):
+        if self.output_filepath is None:
+            return
+        with open(self.output_filepath, "w+") as f:
+            f.write(data)
+
+
+    def format_tasks(self, source_tasks, commits, features, result_tasks):
         return ""

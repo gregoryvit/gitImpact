@@ -32,11 +32,14 @@ def get_formatter(formatter_options, silent):
       generator_options = formatter_options[formatter_key]["generator"]
       return RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
 
+  if "graphviz_formatter" in formatter_options:
+    return GraphvizFormatter(silent, **formatter_options["graphviz_formatter"])
+
   if "redmine_formatter" in formatter_options:
-    return RedmineFormatter(silent, get_redmine_generator("redmine_formatter"))
+    return RedmineFormatter(silent, get_redmine_generator("redmine_formatter"), **formatter_options["redmine_formatter"])
 
   if "friendly_formatter" in formatter_options:
-    return FriendlyFormatter(silent, get_redmine_generator("friendly_formatter"))
+    return FriendlyFormatter(silent, get_redmine_generator("friendly_formatter"), **formatter_options["friendly_formatter"])
   return None
 
 if __name__ == "__main__":
