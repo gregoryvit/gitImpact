@@ -196,7 +196,7 @@ def get_task(string, task_format):
         return None
     return m.group(0)
 
-def mainGraph(task_id, source_dir, formatter, check_only_child_commits, 
+def mainGraph(task_id, source_dir, formatters, check_only_child_commits, 
     exclude_task_ids=[], exclude_file_paths=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
     exclude_task_ids.append(task_id)
     original_task = Task(task_id, format=task_format[0], regex=task_format[1])
@@ -283,15 +283,14 @@ def mainGraph(task_id, source_dir, formatter, check_only_child_commits,
     result_edges = sorted(result_edges, key=lambda x: x[1], reverse=True)
     if limit:
         result_edges = result_edges[:limit]
-    formatted_result = formatter.format_tasks(source_tasks, commits, features, result_edges)
 
-    return formatted_result
+    return [formatter.format_tasks(source_tasks, commits, features, result_edges) for formatter in formatters]
 
 
 def main(
     task_id, 
     source_dir, 
-    formatter,
+    formatters,
     check_only_child_commits, 
     commits=[], 
     min_weight=0.1, 
@@ -306,7 +305,7 @@ def main(
     return mainGraph(
         task_id, 
         source_dir, 
-        formatter, 
+        formatters, 
         check_only_child_commits, 
         excluded_tasks, 
         exclude_file_paths, 

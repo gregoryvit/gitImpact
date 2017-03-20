@@ -23,24 +23,26 @@ def get_option(option, config, alt=None, default=None):
 
   return default
 
-def get_formatter(formatter_options, silent):
+def get_formatters(formatter_dict, silent):
 
   def get_redmine_generator(formatter_key):
-    if "generator" in formatter_options[formatter_key]:
+    if "issues_generator" in formatter_dict[formatter_key]:
       from issues.redmine import RedmineIssuesGenerator
 
-      generator_options = formatter_options[formatter_key]["generator"]
+      generator_options = formatter_dict[formatter_key]["issues_generator"]
       return RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
 
-  if "graphviz_formatter" in formatter_options:
-    return GraphvizFormatter(silent, **formatter_options["graphviz_formatter"])
-
-  if "redmine_formatter" in formatter_options:
-    return RedmineFormatter(silent, get_redmine_generator("redmine_formatter"), **formatter_options["redmine_formatter"])
-
-  if "friendly_formatter" in formatter_options:
-    return FriendlyFormatter(silent, get_redmine_generator("friendly_formatter"), **formatter_options["friendly_formatter"])
-  return None
+  result_formatters = []
+  for formatter_key, formatter_options in formatter_dict.iteritems():
+    if formatter_key == "graphviz_formatter":
+      result_formatters.append(GraphvizFormatter(silent, **formatter_options))
+    elif formatter_key == "redmine_formatter":
+      formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
+      result_formatters.append(RedmineFormatter(silent, **formatter_options))
+    elif formatter_key == "friendly_formatter":
+      formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
+      result_formatters.append(FriendlyFormatter(silent, **formatter_options))
+  return result_formatters
 
 if __name__ == "__main__":
     parser = OptionParser()
@@ -84,7 +86,7 @@ if __name__ == "__main__":
 
     check_all_commits = get_option("check_all_commits", yaml_config, alt=options.check_all_commits, default=False)
     result_options["check_only_child_commits"] = (not bool(check_all_commits))
-    result_options["formatter"] = get_formatter(get_option("formatter", yaml_config, default={}), result_options["silent"])
+    result_options["formatters"] = get_formatters(get_option("formatter", yaml_config, default={}), result_options["silent"])
 
     limit = get_option("limit", yaml_config, alt=options.limit)
     if limit:
