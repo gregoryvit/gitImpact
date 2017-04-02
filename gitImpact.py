@@ -7,6 +7,7 @@ import os
 from git import Repo
 from formatters import *
 
+
 class Task(object):
     def __init__(self, id, format='', regex=''):
         self.raw_id = id
@@ -27,11 +28,18 @@ class Task(object):
     def __str__(self):
         return self.str_id
 
+    def __repr__(self):
+        return "Task %s" % self.str_id
+
+    def __unicode__(self):
+        return unicode(self.__str__())
+
     def __hash__(self):
         return hash(self.raw_id)
 
     def __eq__(self, other):
         return hash(self.raw_id) == hash(other.raw_id)
+
 
 class ImpactAnalysis:
     def __init__(self, task):
@@ -116,6 +124,9 @@ class GitImpactAnalysis(object, ImpactAnalysis):
     def get_affected_files(self, commit):
         return self.repo.commit(commit).stats.files.keys()
 
+    def get_affected_files_stats(self, commit):
+        return self.repo.commit(commit).stats.files
+
     def get_commits_per_file(self, file_path, after=None):
         try:
             params = ['--numstat', '--format=oneline']
@@ -125,12 +136,16 @@ class GitImpactAnalysis(object, ImpactAnalysis):
             message = self.repo.git.log(*params)
             lines = message.split('\n')
             groups = zip(lines[::2], lines[1::2])
+
             def get_int_value(value):
-                try: 
+                try:
                     return int(value)
                 except:
                     return 0
-            commits = {commit_str.split(' ')[0]: {"additions": get_int_value(stats.split('\t')[0]), "deletions": get_int_value(stats.split('\t')[1])} for commit_str, stats in groups}
+
+            commits = {commit_str.split(' ')[0]: {"additions": get_int_value(stats.split('\t')[0]),
+                                                  "deletions": get_int_value(stats.split('\t')[1])} for
+                       commit_str, stats in groups}
         except Exception as e:
             # print "%s\n" % e
             commits = {}
@@ -151,6 +166,18 @@ class GitImpactAnalysis(object, ImpactAnalysis):
         else:
             acc[key] = weight
         return acc
+
+    def get_last_commit(self, commits):
+        if not commits:
+            return
+
+        def compare_commits(l_raw_commit, r_raw_commit):
+            l_commit, r_commit = self.repo.commit(l_raw_commit), self.repo.commit(r_raw_commit)
+            return l_commit.committed_date > r_commit.committed_date
+
+        sorted_commits = sorted(commits, cmp=compare_commits, reverse=True)
+        result_commit = sorted_commits[0]
+        return result_commit
 
 
 def get_commits(repo):
@@ -196,8 +223,10 @@ def get_task(string, task_format):
         return None
     return m.group(0)
 
-def mainGraph(task_id, source_dir, formatters, check_only_child_commits, 
-    exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1, min_impact_rate=0.15, silent=False, limit=None, task_format=('', '')):
+
+def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
+              exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1,
+              min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False):
     exclude_task_ids.append(task_id)
     original_task = Task(task_id, format=task_format[0], regex=task_format[1])
     git = GitImpactAnalysis(original_task, source_dir)
@@ -209,104 +238,267 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
     source_tasks = {}
     commits = {}
     features = {}
+    task_commits = {}
+    result_tasks = []
     edges = {}
+    features_total_affections = {}
 
     source_tasks[task_id] = []
 
-    affected_commits = git.get_affected_commits(original_task.str_id) if not commits else commits
-    for current_commit in affected_commits:
-        commits[current_commit] = []
-        print commits
+    def debug_print(items, pretty=False):
+        if not debug_out:
+            return
+        if pretty:
+            import pprint
+            pprint.pprint(items)
+        else:
+            print(items)
 
-        for file_path in git.get_affected_files(current_commit):
+    def print_state():
+        debug_print("------------- STATE ----------------")
+        debug_print("TASKS:")
+        debug_print(source_tasks, pretty=True)
+        debug_print("\nCOMMITS:")
+        debug_print(commits, pretty=True)
+        debug_print("\nFEATURES:")
+        debug_print(features, pretty=True)
+        debug_print("\nTASK COMMITS:")
+        debug_print(task_commits, pretty=True)
+        debug_print("\nRESULT TASKS:")
+        debug_print(result_tasks)
+        debug_print("\nEDGES:")
+        debug_print(edges, pretty=True)
+        debug_print("\n------------------------------------")
+
+    # Fulfill tasks
+    if commits:
+        source_tasks = {
+            "none": commits
+        }
+    else:
+        source_tasks = {
+            task_id: []
+        }
+
+        for current_commit in git.get_affected_commits(original_task.str_id):
+            if current_commit not in source_tasks[task_id]:
+                commits[current_commit] = []
+                source_tasks[task_id].append(current_commit)
+
+    if last_commit is None:
+        last_commit = git.get_last_commit(commits.keys())
+
+    print_state()
+
+    # Fulfill commits
+
+    for commit, features_list in commits.iteritems():
+        result_features = git.get_affected_files_stats(commit)
+        for file_path, affections in result_features.iteritems():
             if file_path in exclude_features:
                 continue
-            commits_per_file = git.get_commits_per_file(file_path, after=current_commit if check_only_child_commits else None)
+            if file_path not in features_list:
+                if file_path not in features:
+                    features[file_path] = []
+                features_list.append({
+                    "file_path": file_path,
+                    "affections": affections
+                })
 
-            features[file_path] = []
+    print_state()
 
-            total_affections = sum([int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
+    # Fulfill features
 
-            edits_per_file = [item for 
-                sublist in [
-                        map(lambda task: (task, int(affections['additions']) + int(affections['deletions'])),git.get_tasks_from_commit(commit))
-                        for commit, affections in commits_per_file.iteritems()
-                ] for item in sublist if item[0].raw_id not in exclude_task_ids]
+    for feature, feature_commits in features.iteritems():
+        feature_file_path = feature
+        commits_per_file = git.get_commits_per_file(feature_file_path,
+                                                    after=last_commit if check_only_child_commits else None)
 
-            def append_task_item(acc, item):
-                task, affections = item
-                if task not in acc:
-                    acc[task] = {'count': 0, 'affections': 0}
+        if feature_file_path not in features_total_affections:
+            features_total_affections[feature_file_path] = sum(
+                [int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
 
-                acc[task] = {'count': acc[task]['count'] + 1, 'affections': acc[task]['affections'] + affections}
-                return acc
-            tasks = reduce(append_task_item, edits_per_file, {})
-            tasks_per_file = tasks.keys()
+        total_affections = features_total_affections[feature_file_path]
 
-            if not tasks_per_file or float(len(tasks_per_file)) / float(all_tasks_count) > min_impact_rate:
-                # если кол-во затронутых тасков для файла больше минимального значения от общего числа тасков, то пропускаем
-                continue
+        result_commits = [
+            {
+                "commit": commit,
+                "affections": affections,
+                "total_affections": total_affections
+            }
+            for commit, affections in commits_per_file.iteritems()
+            ]
 
-            for cur_task in tasks_per_file:
-                if cur_task.str_id == original_task.str_id:
-                    continue
-                cur_task_id = cur_task.str_id
+        for feature_commit_dict in result_commits:
+            feature_commit = feature_commit_dict["commit"]
+            if feature_commit not in feature_commits:
+                if feature_commit not in task_commits:
+                    task_commits[feature_commit] = []
 
-                task_file_edits = tasks[cur_task]['count']
+                feature_commits.append(feature_commit_dict)
 
-                affections_weight = float(tasks[cur_task]['affections']) / float(total_affections)
-                file_weight = task_file_edits / float(len(edits_per_file))
-                file_weight = file_weight + affections_weight * 0.5
+    # Fulfill tasks
 
-                if cur_task in edges:
-                    edges_count = edges[cur_task] + file_weight
-                else:
-                    edges_count = file_weight
-                edges[cur_task] = edges_count
+    for commit, commit_tasks in task_commits.iteritems():
+        tasks_per_commit = filter(
+            lambda task: task.raw_id not in exclude_task_ids,
+            git.get_tasks_from_commit(commit)
+        )
+        commit_tasks.extend(tasks_per_commit)
+        for task in tasks_per_commit:
+            if task not in result_tasks:
+                result_tasks.append(task)
 
-                if current_commit not in source_tasks[task_id]:
-                    source_tasks[task_id].append(current_commit)
+    # Clean graph
+    # Clean commits
+    commits_to_delete = [commit for commit, commit_tasks in task_commits.iteritems() if not commit_tasks]
+    for commit_to_delete in commits_to_delete:
+        debug_print("DELETE %s" % commit_to_delete)
+        del task_commits[commit_to_delete]
+    for feature in features.keys():
+        features[feature] = [
+            commit_dict
+            for commit_dict in features[feature]
+            if commit_dict["commit"] not in commits_to_delete
+            ]
 
-                if file_path not in commits[current_commit]:
-                    commits[current_commit].append(file_path)
+    # Clean features
+    features_to_delete = [feature for feature, feature_commits in features.iteritems() if not feature_commits]
+    for feature_to_delete in features_to_delete:
+        debug_print("DELETE %s" % feature_to_delete)
+        del features[feature_to_delete]
+    for commit in commits.keys():
+        commits[commit] = [
+            concrete_feature
+            for concrete_feature in commits[commit]
+            if concrete_feature["file_path"] not in features_to_delete
+            ]
 
-                if cur_task not in features[file_path]:
-                    features[file_path].append(cur_task)
+    # Clean input commits
+    input_commits_to_delete = [commit for commit, commit_features in commits.iteritems() if not commit_features]
+    for input_commit_to_delete in input_commits_to_delete:
+        debug_print("DELETE %s" % input_commit_to_delete)
+        del commits[input_commit_to_delete]
+    for source_task in source_tasks.keys():
+        source_tasks[source_task] = [
+            task_commit
+            for task_commit in source_tasks[source_task]
+            if task_commit not in input_commits_to_delete
+            ]
 
-    result_edges = [(task, weight) for task, weight in edges.iteritems() if weight > min_weight]
-    result_edges = sorted(result_edges, key=lambda x: x[1], reverse=True)
+    print_state()
+
+    # Calculate tasks impact
+
+    # Calc impact in source tasks
+    source_calculated_tasks = {}
+
+    for task, source_task_commits in source_tasks.iteritems():
+        result_features = {}
+        for commit in source_task_commits:
+            source_features = commits[commit]
+            for feature_dict in source_features:
+                if feature_file_path in features_total_affections:
+                    total_affections = features_total_affections[feature_file_path]
+                    impact = float(feature_dict["affections"]["insertions"] + feature_dict["affections"][
+                        "deletions"]) / total_affections
+                    feature = feature_dict["file_path"]
+                    if feature in result_features:
+                        result_features[feature]["impact_level"] += impact
+                    else:
+                        result_features[feature] = {
+                            "impact_level": impact
+                        }
+        source_calculated_tasks[task] = result_features
+
+    debug_print(source_calculated_tasks, pretty=True)
+
+    # Merge source tasks impact
+
+    source_files_impact = {}
+
+    for files_impacts in source_calculated_tasks.values():
+        for source_file, impact_parameters in files_impacts.iteritems():
+            if source_file in source_files_impact:
+                source_files_impact[source_file] += impact_parameters["impact_level"]
+            else:
+                source_files_impact[source_file] = impact_parameters["impact_level"]
+
+    debug_print(source_files_impact, pretty=True)
+
+    # Calc impact in result tasks
+    result_calculated_tasks = {}
+
+    for task in result_tasks:
+        cur_commits = [commit for commit, commit_tasks in task_commits.iteritems() if task in commit_tasks]
+        result_features = {}
+        for commit in cur_commits:
+            for feature, feature_commits in features.iteritems():
+                f_commits = [f_dict for f_dict in feature_commits if f_dict["commit"] == commit]
+                if f_commits:
+                    f_commit = f_commits[0]
+                    impact = float(f_commit["affections"]["additions"] + f_commit["affections"]["deletions"]) / \
+                             f_commit["total_affections"]
+                    result_impact = impact / (1.0 - source_files_impact[feature])
+                    if feature in result_features:
+                        result_features[feature]["impact_level_exclude_source"] += result_impact
+                        result_features[feature]["impact_level"] += impact
+                    else:
+                        result_features[feature] = {
+                            "impact_level_exclude_source": result_impact,
+                            "impact_level": impact
+                        }
+
+        result_calculated_tasks[task] = result_features
+
+    debug_print(result_calculated_tasks, pretty=True)
+
+    # Merge result tasks features
+
+    merged_result_tasks = {}
+
+    for task, task_features_impacts in result_calculated_tasks.iteritems():
+        features_count = len(task_features_impacts)
+        features_impact_sum = sum([feature_impact_params["impact_level_exclude_source"] for feature_impact_params in
+                                   task_features_impacts.values()])
+        merged_result_tasks[task] = features_impact_sum / features_count
+
+    result_edges = sorted(merged_result_tasks.iteritems(), key=lambda x: x[1], reverse=True)
+
+    debug_print(result_edges, pretty=True)
+
     if limit:
         result_edges = result_edges[:limit]
 
-    return [formatter.format_tasks(source_tasks, commits, features, result_edges) for formatter in formatters]
+    return [formatter.format_tasks(source_tasks, commits, features, task_commits, result_tasks, result_edges) for
+            formatter in formatters]
 
 
 def main(
-    task_id, 
-    source_dir, 
-    formatters,
-    check_only_child_commits, 
-    commits=[], 
-    min_weight=0.1, 
-    min_impact_rate=0.15, 
-    silent=False, 
-    limit=None, 
-    excluded_tasks=[], 
-    exclude_features=[],
-    output_filepath=None,
-    task_format=('', '')):
-
+        task_id,
+        source_dir,
+        formatters,
+        check_only_child_commits,
+        commits=[],
+        min_weight=0.1,
+        min_impact_rate=0.15,
+        silent=False,
+        limit=None,
+        excluded_tasks=[],
+        exclude_features=[],
+        output_filepath=None,
+        task_format=('', '')):
     return mainGraph(
-        task_id, 
-        source_dir, 
-        formatters, 
-        check_only_child_commits, 
-        excluded_tasks, 
-        exclude_features, 
-        commits=commits, 
-        min_weight=min_weight, 
-        min_impact_rate=min_impact_rate, 
-        silent=silent, 
+        task_id,
+        source_dir,
+        formatters,
+        check_only_child_commits,
+        excluded_tasks,
+        exclude_features,
+        commits=commits,
+        min_weight=min_weight,
+        min_impact_rate=min_impact_rate,
+        silent=silent,
         limit=limit,
         task_format=task_format
     )
