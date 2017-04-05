@@ -224,29 +224,19 @@ def get_task(string, task_format):
     return m.group(0)
 
 
-def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
-              exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1,
-              min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False):
-    exclude_task_ids.append(task_id)
-    original_task = Task(task_id, format=task_format[0], regex=task_format[1])
-    git = GitImpactAnalysis(original_task, source_dir)
+class ImpactGraph(object):
+    def __init__(self, debug_out=False):
+        self.source_tasks = {}
+        self.commits = {}
+        self.features = {}
+        self.task_commits = {}
+        self.result_tasks = []
+        self.edges = {}
+        self.features_total_affections = {}
+        self.debug_out = debug_out
 
-    all_tasks_count = len(git.get_all_tasks())
-    if not silent:
-        print "Total tasks: %d" % all_tasks_count
-
-    source_tasks = {}
-    commits = {}
-    features = {}
-    task_commits = {}
-    result_tasks = []
-    edges = {}
-    features_total_affections = {}
-
-    source_tasks[task_id] = []
-
-    def debug_print(items, pretty=False):
-        if not debug_out:
+    def debug_print(self, items, pretty=False):
+        if not self.debug_out:
             return
         if pretty:
             import pprint
@@ -254,71 +244,115 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
         else:
             print(items)
 
-    def print_state():
-        debug_print("------------- STATE ----------------")
-        debug_print("TASKS:")
-        debug_print(source_tasks, pretty=True)
-        debug_print("\nCOMMITS:")
-        debug_print(commits, pretty=True)
-        debug_print("\nFEATURES:")
-        debug_print(features, pretty=True)
-        debug_print("\nTASK COMMITS:")
-        debug_print(task_commits, pretty=True)
-        debug_print("\nRESULT TASKS:")
-        debug_print(result_tasks)
-        debug_print("\nEDGES:")
-        debug_print(edges, pretty=True)
-        debug_print("\n------------------------------------")
+    def print_state(self):
+        self.debug_print("------------- STATE ----------------")
+        self.debug_print("TASKS:")
+        self.debug_print(self.source_tasks, pretty=True)
+        self.debug_print("\nCOMMITS:")
+        self.debug_print(self.commits, pretty=True)
+        self.debug_print("\nFEATURES:")
+        self.debug_print(self.features, pretty=True)
+        self.debug_print("\nTASK COMMITS:")
+        self.debug_print(self.task_commits, pretty=True)
+        self.debug_print("\nRESULT TASKS:")
+        self.debug_print(self.result_tasks)
+        self.debug_print("\nEDGES:")
+        self.debug_print(self.edges, pretty=True)
+        self.debug_print("\n------------------------------------")
 
-    # Fulfill tasks
+    def clean(self):
+        # Clean graph
+
+        def check_commit_tasks(commit_tasks_list):
+            filtered_tasks = [r_task for r_task in commit_tasks_list if r_task in self.result_tasks]
+            return not filtered_tasks
+
+        # Clean commits
+
+        commits_to_delete = [commit for commit, commit_tasks in self.task_commits.iteritems() if check_commit_tasks(commit_tasks)]
+        for commit_to_delete in commits_to_delete:
+            self.debug_print("DELETE %s" % commit_to_delete)
+            del self.task_commits[commit_to_delete]
+        for feature in self.features.keys():
+            self.features[feature] = [
+                commit_dict
+                for commit_dict in self.features[feature]
+                if commit_dict["commit"] not in commits_to_delete
+                ]
+
+        # Clean features
+        features_to_delete = [feature for feature, feature_commits in self.features.iteritems() if not feature_commits]
+        for feature_to_delete in features_to_delete:
+            self.debug_print("DELETE %s" % feature_to_delete)
+            del self.features[feature_to_delete]
+        for commit in self.commits.keys():
+            self.commits[commit] = [
+                concrete_feature
+                for concrete_feature in self.commits[commit]
+                if concrete_feature["file_path"] not in features_to_delete
+                ]
+
+        # Clean input commits
+        input_commits_to_delete = [commit for commit, commit_features in self.commits.iteritems() if
+                                   not commit_features]
+        for input_commit_to_delete in input_commits_to_delete:
+            self.debug_print("DELETE %s" % input_commit_to_delete)
+            del self.commits[input_commit_to_delete]
+        for source_task in self.source_tasks.keys():
+            self.source_tasks[source_task] = [
+                task_commit
+                for task_commit in self.source_tasks[source_task]
+                if task_commit not in input_commits_to_delete
+                ]
+
+
+# Fulfill
+
+def fulfill_source_tasks(impact_state_graph, git_impact_core, commits=[], original_task=None):
     if commits:
-        source_tasks = {
+        impact_state_graph.source_tasks = {
             "none": commits
         }
     else:
-        source_tasks = {
-            task_id: []
+        impact_state_graph.source_tasks = {
+            original_task.raw_id: []
         }
 
-        for current_commit in git.get_affected_commits(original_task.str_id):
-            if current_commit not in source_tasks[task_id]:
-                commits[current_commit] = []
-                source_tasks[task_id].append(current_commit)
+        for current_commit in git_impact_core.get_affected_commits(original_task.str_id):
+            if current_commit not in impact_state_graph.source_tasks[original_task.raw_id]:
+                impact_state_graph.commits[current_commit] = []
+                impact_state_graph.source_tasks[original_task.raw_id].append(current_commit)
 
-    if last_commit is None:
-        last_commit = git.get_last_commit(commits.keys())
 
-    print_state()
-
-    # Fulfill commits
-
-    for commit, features_list in commits.iteritems():
-        result_features = git.get_affected_files_stats(commit)
+def fulfill_commits(impact_state_graph, git_impact_core, exclude_features):
+    for commit, features_list in impact_state_graph.commits.iteritems():
+        result_features = git_impact_core.get_affected_files_stats(commit)
         for file_path, affections in result_features.iteritems():
             if file_path in exclude_features:
                 continue
             if file_path not in features_list:
-                if file_path not in features:
-                    features[file_path] = []
+                if file_path not in impact_state_graph.features:
+                    impact_state_graph.features[file_path] = []
                 features_list.append({
                     "file_path": file_path,
                     "affections": affections
                 })
 
-    print_state()
 
-    # Fulfill features
+def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, check_only_child_commits=True):
+    if last_commit is None:
+        last_commit = git_impact_core.get_last_commit(impact_state_graph.commits.keys())
 
-    for feature, feature_commits in features.iteritems():
+    for feature, feature_commits in impact_state_graph.features.iteritems():
         feature_file_path = feature
-        commits_per_file = git.get_commits_per_file(feature_file_path,
-                                                    after=last_commit if check_only_child_commits else None)
+        commits_per_file = git_impact_core.get_commits_per_file(feature_file_path,
+                                                                after=last_commit if check_only_child_commits else None)
 
-        if feature_file_path not in features_total_affections:
-            features_total_affections[feature_file_path] = sum(
+        if feature_file_path not in impact_state_graph.features_total_affections:
+            impact_state_graph.features_total_affections[feature_file_path] = sum(
                 [int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
 
-        total_affections = features_total_affections[feature_file_path]
+        total_affections = impact_state_graph.features_total_affections[feature_file_path]
 
         result_commits = [
             {
@@ -332,74 +366,39 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
         for feature_commit_dict in result_commits:
             feature_commit = feature_commit_dict["commit"]
             if feature_commit not in feature_commits:
-                if feature_commit not in task_commits:
-                    task_commits[feature_commit] = []
+                if feature_commit not in impact_state_graph.task_commits:
+                    impact_state_graph.task_commits[feature_commit] = []
 
                 feature_commits.append(feature_commit_dict)
 
-    # Fulfill tasks
 
-    for commit, commit_tasks in task_commits.iteritems():
+def fulfill_tasks(impact_state_graph, git_impact_core, exclude_task_ids):
+    for commit, commit_tasks in impact_state_graph.task_commits.iteritems():
         tasks_per_commit = filter(
             lambda task: task.raw_id not in exclude_task_ids,
-            git.get_tasks_from_commit(commit)
+            git_impact_core.get_tasks_from_commit(commit)
         )
         commit_tasks.extend(tasks_per_commit)
         for task in tasks_per_commit:
-            if task not in result_tasks:
-                result_tasks.append(task)
+            if task not in impact_state_graph.result_tasks:
+                impact_state_graph.result_tasks.append(task)
 
-    # Clean graph
-    # Clean commits
-    commits_to_delete = [commit for commit, commit_tasks in task_commits.iteritems() if not commit_tasks]
-    for commit_to_delete in commits_to_delete:
-        debug_print("DELETE %s" % commit_to_delete)
-        del task_commits[commit_to_delete]
-    for feature in features.keys():
-        features[feature] = [
-            commit_dict
-            for commit_dict in features[feature]
-            if commit_dict["commit"] not in commits_to_delete
-            ]
 
-    # Clean features
-    features_to_delete = [feature for feature, feature_commits in features.iteritems() if not feature_commits]
-    for feature_to_delete in features_to_delete:
-        debug_print("DELETE %s" % feature_to_delete)
-        del features[feature_to_delete]
-    for commit in commits.keys():
-        commits[commit] = [
-            concrete_feature
-            for concrete_feature in commits[commit]
-            if concrete_feature["file_path"] not in features_to_delete
-            ]
+# Calculate impact
 
-    # Clean input commits
-    input_commits_to_delete = [commit for commit, commit_features in commits.iteritems() if not commit_features]
-    for input_commit_to_delete in input_commits_to_delete:
-        debug_print("DELETE %s" % input_commit_to_delete)
-        del commits[input_commit_to_delete]
-    for source_task in source_tasks.keys():
-        source_tasks[source_task] = [
-            task_commit
-            for task_commit in source_tasks[source_task]
-            if task_commit not in input_commits_to_delete
-            ]
-
-    print_state()
-
-    # Calculate tasks impact
-
-    # Calc impact in source tasks
+def calc_impact_in_source_tasks(impact_state_graph):
     source_calculated_tasks = {}
 
-    for task, source_task_commits in source_tasks.iteritems():
+    # Calc
+
+    for task, source_task_commits in impact_state_graph.source_tasks.iteritems():
         result_features = {}
         for commit in source_task_commits:
-            source_features = commits[commit]
+            source_features = impact_state_graph.commits[commit]
             for feature_dict in source_features:
-                if feature_file_path in features_total_affections:
-                    total_affections = features_total_affections[feature_file_path]
+                feature_file_path = feature_dict["file_path"]
+                if feature_file_path in impact_state_graph.features_total_affections:
+                    total_affections = impact_state_graph.features_total_affections[feature_file_path]
                     impact = float(feature_dict["affections"]["insertions"] + feature_dict["affections"][
                         "deletions"]) / total_affections
                     feature = feature_dict["file_path"]
@@ -411,9 +410,7 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
                         }
         source_calculated_tasks[task] = result_features
 
-    debug_print(source_calculated_tasks, pretty=True)
-
-    # Merge source tasks impact
+    # Merge
 
     source_files_impact = {}
 
@@ -424,16 +421,18 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
             else:
                 source_files_impact[source_file] = impact_parameters["impact_level"]
 
-    debug_print(source_files_impact, pretty=True)
+    return source_files_impact
 
-    # Calc impact in result tasks
+
+def calc_impact_in_result_tasks(impact_state_graph, source_files_impact):
     result_calculated_tasks = {}
 
-    for task in result_tasks:
-        cur_commits = [commit for commit, commit_tasks in task_commits.iteritems() if task in commit_tasks]
+    for task in impact_state_graph.result_tasks:
+        cur_commits = [commit for commit, commit_tasks in impact_state_graph.task_commits.iteritems() if
+                       task in commit_tasks]
         result_features = {}
         for commit in cur_commits:
-            for feature, feature_commits in features.iteritems():
+            for feature, feature_commits in impact_state_graph.features.iteritems():
                 f_commits = [f_dict for f_dict in feature_commits if f_dict["commit"] == commit]
                 if f_commits:
                     f_commit = f_commits[0]
@@ -451,8 +450,6 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
 
         result_calculated_tasks[task] = result_features
 
-    debug_print(result_calculated_tasks, pretty=True)
-
     # Merge result tasks features
 
     merged_result_tasks = {}
@@ -464,13 +461,73 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
         merged_result_tasks[task] = features_impact_sum / features_count
 
     result_edges = sorted(merged_result_tasks.iteritems(), key=lambda x: x[1], reverse=True)
+    return result_edges
 
-    debug_print(result_edges, pretty=True)
+
+# Main
+
+def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
+              exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1,
+              min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False):
+    def debug_print(items):
+        if not debug_out:
+            return
+        import pprint
+        pprint.pprint(items)
+
+    exclude_task_ids.append(task_id)
+    original_task = Task(task_id, format=task_format[0], regex=task_format[1])
+    git = GitImpactAnalysis(original_task, source_dir)
+
+    all_tasks_count = len(git.get_all_tasks())
+    if not silent:
+        print "Total tasks: %d" % all_tasks_count
+
+    state = ImpactGraph(debug_out=debug_out)
+    state.source_tasks[task_id] = []
+
+    # Fulfill source tasks
+
+    fulfill_source_tasks(state, git, commits=commits, original_task=original_task)
+    state.print_state()
+
+    # Fulfill commits
+
+    fulfill_commits(state, git, exclude_features)
+    state.print_state()
+
+    # Fulfill features
+
+    fulfill_features(state, git, last_commit=last_commit, check_only_child_commits=check_only_child_commits)
+    state.print_state()
+
+    # Fulfill tasks
+
+    fulfill_tasks(state, git, exclude_task_ids)
+    state.print_state()
+
+    # Clean
+
+    state.clean()
+    state.print_state()
+
+    # Calculate tasks impact
+
+    # Calc impact in source tasks and merge
+    source_files_impact = calc_impact_in_source_tasks(state)
+    debug_print(source_files_impact)
+
+    # Calc impact in result tasks and merge
+    result_edges = calc_impact_in_result_tasks(state, source_files_impact)
+    debug_print(result_edges)
 
     if limit:
         result_edges = result_edges[:limit]
+        state.result_tasks = [task for task, _ in result_edges]
+        state.clean()
+        state.print_state()
 
-    return [formatter.format_tasks(source_tasks, commits, features, task_commits, result_tasks, result_edges) for
+    return [formatter.format_tasks(state.source_tasks, state.commits, state.features, state.task_commits, state.result_tasks, result_edges) for
             formatter in formatters]
 
 
@@ -487,7 +544,8 @@ def main(
         excluded_tasks=[],
         exclude_features=[],
         output_filepath=None,
-        task_format=('', '')):
+        task_format=('', ''),
+        debug_out=False):
     return mainGraph(
         task_id,
         source_dir,
@@ -499,6 +557,7 @@ def main(
         min_weight=min_weight,
         min_impact_rate=min_impact_rate,
         silent=silent,
+        debug_out=debug_out,
         limit=limit,
         task_format=task_format
     )

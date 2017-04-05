@@ -35,6 +35,8 @@ if __name__ == "__main__":
                       help=u'Path to yaml configuration file')
     parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
                       help=u'Path to git repository')
+    parser.add_option("--debug", dest="debug", action="store_true", default=False,
+                      help=u'Print debug logs')
 
     (options, _) = parser.parse_args()
 
