@@ -9,6 +9,9 @@ setup(
     author='gregoryvit',
     author_email='gregoryvit@gmail.com',
     description='Automatic git impact analysis tool',
+    scripts=[
+      'bin/gitimpact'
+    ],
     install_requires=[
         "gitpython",
         "python-redmine",

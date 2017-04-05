@@ -1,8 +1,6 @@
 # coding=utf-8
 
 import core
-from optparse import OptionParser
-import os
 
 
 def parse_yaml(path_to_yaml_file):
@@ -75,29 +73,3 @@ def main(app_options):
         result_options["limit"] = int(limit)
 
     return core.main(**result_options)
-
-
-if __name__ == "__main__":
-    parser = OptionParser()
-    parser.add_option("-t", "--task", dest="task_id",
-                      help="redmine task identifier")
-    parser.add_option("-c", "--commit", dest="commit", default=[], type=str, action='append',
-                      help="SHA of commit")
-    parser.add_option("--min_weight", dest="min_weight", default=0.1,
-                      help=u'Минимальный вес возвращаемых тасков.')
-    parser.add_option("--min_impact_rate", dest="min_impact_rate", default=0.15,
-                      help=u'Если кол-во затронутых тасков для файла больше 15% от общего числа тасков, то пропускаем. 1 – все файлы, 0 – без файлов')
-    parser.add_option("--all_commits", dest="check_all_commits", action="store_true", default=False,
-                      help=u'By default gitimpact checks only child commits')
-    parser.add_option("--silent", dest="silent", action="store_true", default=False,
-                      help=u'Print only formatted result')
-    parser.add_option("-n", dest="limit", default=None,
-                      help=u'Result issues count')
-    parser.add_option("--config", dest="yaml_config_file", default=os.path.join(os.getcwd(), ".gitimpact.yml"),
-                      help=u'Path to yaml configuration file')
-    parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
-                      help=u'Path to git repository')
-
-    (options, _) = parser.parse_args()
-
-    print main(options)
