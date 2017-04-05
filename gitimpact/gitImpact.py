@@ -1,7 +1,6 @@
-#!/usr/local/opt/python/bin/python2.7
 # coding=utf-8
 
-import gitImpact
+import core
 from optparse import OptionParser
 import os
 
@@ -37,13 +36,13 @@ def get_formatters(formatter_dict, silent):
     result_formatters = []
     for formatter_key, formatter_options in formatter_dict.iteritems():
         if formatter_key == "graphviz_formatter":
-            result_formatters.append(gitImpact.GraphvizFormatter(silent, **formatter_options))
+            result_formatters.append(core.GraphvizFormatter(silent, **formatter_options))
         elif formatter_key == "redmine_formatter":
             formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(gitImpact.RedmineFormatter(silent, **formatter_options))
+            result_formatters.append(core.RedmineFormatter(silent, **formatter_options))
         elif formatter_key == "friendly_formatter":
             formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(gitImpact.FriendlyFormatter(silent, **formatter_options))
+            result_formatters.append(core.FriendlyFormatter(silent, **formatter_options))
     return result_formatters
 
 
@@ -75,7 +74,7 @@ def main(app_options):
     if limit:
         result_options["limit"] = int(limit)
 
-    print gitImpact.main(**result_options)
+    return core.main(**result_options)
 
 
 if __name__ == "__main__":
@@ -101,4 +100,4 @@ if __name__ == "__main__":
 
     (options, _) = parser.parse_args()
 
-    main(options)
+    print main(options)
