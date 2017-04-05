@@ -1,48 +1,82 @@
 #!/usr/local/opt/python/bin/python2.7
 # coding=utf-8
 
-from gitImpact import *
+import gitImpact
 from optparse import OptionParser
 import os
 
-def parse_yaml(path_to_yaml_file):
-  import ruamel.yaml
 
-  with open(path_to_yaml_file, 'r') as yaml_file:
-    try:
-        return ruamel.yaml.load(yaml_file, Loader=ruamel.yaml.Loader)
-    except ruamel.yaml.YAMLError as exc:
-        print(exc)
+def parse_yaml(path_to_yaml_file):
+    import ruamel.yaml
+
+    with open(path_to_yaml_file, 'r') as yaml_file:
+        try:
+            return ruamel.yaml.load(yaml_file, Loader=ruamel.yaml.Loader)
+        except ruamel.yaml.YAMLError as exc:
+            print(exc)
+
 
 def get_option(option, config, alt=None, default=None):
-  if alt is not None and alt != default:
-    return alt
+    if alt is not None and alt != default:
+        return alt
 
-  if option in config:
-    return config[option]
+    if option in config:
+        return config[option]
 
-  return default
+    return default
+
 
 def get_formatters(formatter_dict, silent):
+    def get_redmine_generator(key):
+        if "issues_generator" in formatter_dict[key]:
+            from issues.redmine import RedmineIssuesGenerator
 
-  def get_redmine_generator(formatter_key):
-    if "issues_generator" in formatter_dict[formatter_key]:
-      from issues.redmine import RedmineIssuesGenerator
+            generator_options = formatter_dict[key]["issues_generator"]
+            return RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
 
-      generator_options = formatter_dict[formatter_key]["issues_generator"]
-      return RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
+    result_formatters = []
+    for formatter_key, formatter_options in formatter_dict.iteritems():
+        if formatter_key == "graphviz_formatter":
+            result_formatters.append(gitImpact.GraphvizFormatter(silent, **formatter_options))
+        elif formatter_key == "redmine_formatter":
+            formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
+            result_formatters.append(gitImpact.RedmineFormatter(silent, **formatter_options))
+        elif formatter_key == "friendly_formatter":
+            formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
+            result_formatters.append(gitImpact.FriendlyFormatter(silent, **formatter_options))
+    return result_formatters
 
-  result_formatters = []
-  for formatter_key, formatter_options in formatter_dict.iteritems():
-    if formatter_key == "graphviz_formatter":
-      result_formatters.append(GraphvizFormatter(silent, **formatter_options))
-    elif formatter_key == "redmine_formatter":
-      formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-      result_formatters.append(RedmineFormatter(silent, **formatter_options))
-    elif formatter_key == "friendly_formatter":
-      formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-      result_formatters.append(FriendlyFormatter(silent, **formatter_options))
-  return result_formatters
+
+def main(app_options):
+    yaml_config = parse_yaml(app_options.yaml_config_file)
+
+    task_format = get_option("task_format", yaml_config, default={})
+
+    result_options = {
+        "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
+        "exclude_features": get_option("exclude_features", yaml_config, default=[]),
+        "output_filepath": get_option("output_filepath", yaml_config),
+        "task_id": get_option("task_id", yaml_config, alt=app_options.task_id),
+        "commits": get_option("commits", yaml_config, alt=app_options.commit, default=[]),
+        "min_weight": float(get_option("min_weight", yaml_config, alt=app_options.min_weight, default=0.1)),
+        "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=app_options.min_impact_rate, default=0.15),
+        "silent": get_option("silent", yaml_config, alt=app_options.silent, default=False),
+        "source_dir": app_options.repo_path,
+        "task_format": (
+            get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))
+    }
+
+    check_all_commits = get_option("check_all_commits", yaml_config, alt=app_options.check_all_commits, default=False)
+    result_options["check_only_child_commits"] = (not bool(check_all_commits))
+    result_options["formatters"] = get_formatters(get_option("formatter", yaml_config, default={}),
+                                                  result_options["silent"])
+
+    limit = get_option("limit", yaml_config, alt=app_options.limit)
+    if limit:
+        result_options["limit"] = int(limit)
+
+    print gitImpact.main(**result_options)
+
 
 if __name__ == "__main__":
     parser = OptionParser()
@@ -65,31 +99,6 @@ if __name__ == "__main__":
     parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
                       help=u'Path to git repository')
 
-    (options, args) = parser.parse_args()
+    (options, _) = parser.parse_args()
 
-    yaml_config = parse_yaml(options.yaml_config_file)
-
-    task_format = get_option("task_format", yaml_config, default={})
-
-    result_options = {
-      "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
-      "exclude_features": get_option("exclude_features", yaml_config, default=[]),
-      "output_filepath": get_option("output_filepath", yaml_config),
-      "task_id": get_option("task_id", yaml_config, alt=options.task_id),
-      "commits": get_option("commits", yaml_config, alt=options.commit, default=[]),
-      "min_weight": float(get_option("min_weight", yaml_config, alt=options.min_weight, default=0.1)),
-      "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=options.min_impact_rate, default=0.15),
-      "silent": get_option("silent", yaml_config, alt=options.silent, default=False),
-      "source_dir": options.repo_path,
-      "task_format": (get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))
-    }
-
-    check_all_commits = get_option("check_all_commits", yaml_config, alt=options.check_all_commits, default=False)
-    result_options["check_only_child_commits"] = (not bool(check_all_commits))
-    result_options["formatters"] = get_formatters(get_option("formatter", yaml_config, default={}), result_options["silent"])
-
-    limit = get_option("limit", yaml_config, alt=options.limit)
-    if limit:
-      result_options["limit"] = int(limit)
-
-    print main(**result_options)
+    main(options)
