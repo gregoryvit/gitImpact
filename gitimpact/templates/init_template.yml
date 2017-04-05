@@ -1,0 +1,23 @@
+excluded_tasks: # List of tasks ids to exclude
+
+exclude_features: # List of file paths to exclude
+  - "Podfile"
+  - "Podfile.lock"
+
+task_format:
+  output_format: "#{}"
+  parse_regex: "#([0-9]+)"
+
+formatter:
+  redmine_formatter:
+    output_filepath: "~/RedmineFormatterOutput.txt"
+    issues_generator:
+      host: "redmine.test.com"
+      api_key: "REDMINE_API_KEY"
+
+commits: []
+min_weight: 0.0
+min_impact_rate: 1.0
+check_all_commits: false
+silent: false
+limit: 10

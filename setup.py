@@ -12,6 +12,9 @@ setup(
     scripts=[
       'bin/gitimpact'
     ],
+    package_data={
+        'gitimpact': ['templates/*']
+    },
     install_requires=[
         "gitpython",
         "python-redmine",

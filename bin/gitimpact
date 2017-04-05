@@ -3,10 +3,19 @@
 
 from optparse import OptionParser
 import os
+import sys
 
 from gitimpact import gitImpact
 
 if __name__ == "__main__":
+    sub_command = ""
+    if len(sys.argv) > 1:
+        sub_command = sys.argv[1]
+
+    if sub_command == 'init':
+        gitImpact.create_config_file(os.getcwd())
+        exit(0)
+
     parser = OptionParser()
     parser.add_option("-t", "--task", dest="task_id",
                       help="redmine task identifier")
@@ -22,7 +31,7 @@ if __name__ == "__main__":
                       help=u'Print only formatted result')
     parser.add_option("-n", dest="limit", default=None,
                       help=u'Result issues count')
-    parser.add_option("--config", dest="yaml_config_file", default=os.path.join(os.getcwd(), ".gitimpact.yml"),
+    parser.add_option("--config", dest="yaml_config_file", default=os.path.join(os.getcwd(), gitImpact.CONFIG_FILENAME),
                       help=u'Path to yaml configuration file')
     parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
                       help=u'Path to git repository')

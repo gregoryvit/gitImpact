@@ -2,6 +2,17 @@
 
 import core
 
+CONFIG_FILENAME = ".gitimpact.yml"
+CONFIG_TEMPLATE_FILE_PATH = "templates/init_template.yml"
+
+
+def create_config_file(directory_path):
+    import os
+    import shutil
+    template_yml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), CONFIG_TEMPLATE_FILE_PATH)
+    result_yml_path = os.path.join(directory_path, CONFIG_FILENAME)
+    shutil.copy(template_yml_path, result_yml_path)
+
 
 def parse_yaml(path_to_yaml_file):
     import ruamel.yaml
@@ -45,7 +56,11 @@ def get_formatters(formatter_dict, silent):
 
 
 def main(app_options):
-    yaml_config = parse_yaml(app_options.yaml_config_file)
+    try:
+        yaml_config = parse_yaml(app_options.yaml_config_file)
+    except IOError as e:
+        print "Configuration file not found. Run `gitimpact init` to create it"
+        exit(1)
 
     task_format = get_option("task_format", yaml_config, default={})
 
