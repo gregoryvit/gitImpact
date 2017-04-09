@@ -247,24 +247,142 @@ def get_task(string, task_format):
 
 class ImpactGraph(object):
     def __init__(self, debug_out=False):
+
+        #
+        # Dict in format:
+        #   {
+        #       source_task_id: [commits]
+        #   }
+        # Example:
+        #   {
+        #       '32604': [
+        #           u'74941a9cff89e53fe9abc02fcaf6bcc97a949a39',
+        #           u'82f75f333aea7fa0acfb8f8a0e7d63a801bd24f4'
+        #       ]
+        #   }
+        #
         self.source_tasks = {}
+
+        #
+        # Dict in format:
+        #   {
+        #       commit_hex_sha: [
+        #           {
+        #               'affections': {},
+        #               'file_path': "path/to/file"
+        #           }
+        #       ]
+        #   }
+        # Example:
+        #   {
+        #       u'152087f861f45a83589a006075d18b38f94e88dd': [
+        #           {
+        #               'affections': {
+        #                   'deletions': 2,
+        #                   'insertions': 0,
+        #                   'lines': 2
+        #               },
+        #               'file_path': u'Path/To/File.txt'}
+        #           }
+        #       ]
+        #   }
+        #
         self.commits = {}
+
+        #
+        # Dict in format:
+        #   {
+        #       file_path: [
+        #           {
+        #               'affections': {},
+        #               'commit': "commit_hex_sha",
+        #               'total_affections: total_file_affections_int
+        #           }
+        #       ]
+        #   }
+        # Example:
+        #   {
+        #       u'Path/To/File.txt': [
+        #           {
+        #               'affections': {
+        #                   'additions': 18,
+        #                   'deletions': 18
+        #               },
+        #               'commit': u'fd8f24a5055f35013b0962bbfc2ab95776d5e230',
+        #               'total_affections': 295
+        #           }
+        #       ]
+        #   }
+        #
         self.features = {}
+
+        #
+        # Dict in format:
+        #   {
+        #       file_path: set([
+        #           'sub_feature_identifier'
+        #       ])
+        #   }
+        # Example:
+        #   {
+        #       u'Path/To/File.txt': set([
+        #           u'3116A2701E8DA56300A2336F',
+        #           u'3116A2711E8DA56300A2336F',
+        #           u'3116A2721E8DA62300A2336F'
+        #       ])
+        #   }
+        #
         self.sub_features = {}
+
+        #
+        # Dict in format:
+        #   {
+        #       commit_hex_sha: [
+        #           Task
+        #       ]
+        #   }
+        # Example:
+        #   {
+        #       u'00ab1c583610755aff0b1d167ef0f5f12a184c07': [Task #1, Task #2]
+        #   }
+        #
         self.task_commits = {}
+
+        #
+        # List of impacted tasks
+        # Example:
+        #   [Task #1, Task #2]
+        #
         self.result_tasks = []
-        self.edges = {}
+
+        #
+        # List of tasks with weights
+        # Example:
+        #   [(Task #1, 0.65), (Task #2, 0.32)]
+        #
+        self.edges = []
+
+        # Cached features total affections
         self.features_total_affections = {}
+
+        # True – enable debug output to terminal
+        # False – disable debug output
         self.debug_out = debug_out
 
-    def debug_print(self, items, pretty=False):
+    def debug_print(self, source_obj, pretty=False):
+        """
+        Prints object to console
+
+        :param source_obj: Object that's need to be printed
+        :param pretty: Enable formatted output
+        """
         if not self.debug_out:
             return
         if pretty:
             import pprint
-            pprint.pprint(items)
+            pprint.pprint(source_obj)
         else:
-            print(items)
+            print(source_obj)
 
     def print_state(self):
         self.debug_print("------------- STATE ----------------")
@@ -293,7 +411,8 @@ class ImpactGraph(object):
 
         # Clean commits
 
-        commits_to_delete = [commit for commit, commit_tasks in self.task_commits.iteritems() if check_commit_tasks(commit_tasks)]
+        commits_to_delete = [commit for commit, commit_tasks in self.task_commits.iteritems() if
+                             check_commit_tasks(commit_tasks)]
         for commit_to_delete in commits_to_delete:
             self.debug_print("DELETE %s" % commit_to_delete)
             del self.task_commits[commit_to_delete]
@@ -511,7 +630,7 @@ def calc_impact_in_result_tasks(impact_state_graph, source_files_impact):
         merged_result_tasks[task] = features_impact_sum / features_count
 
     result_edges = sorted(merged_result_tasks.iteritems(), key=lambda x: x[1], reverse=True)
-    return result_edges
+    impact_state_graph.edges = result_edges
 
 
 # Main
@@ -570,16 +689,17 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
     debug_print(source_files_impact)
 
     # Calc impact in result tasks and merge
-    result_edges = calc_impact_in_result_tasks(state, source_files_impact)
-    debug_print(result_edges)
+    calc_impact_in_result_tasks(state, source_files_impact)
+    debug_print(state.print_state())
 
     if limit:
-        result_edges = result_edges[:limit]
+        result_edges = state.edges[:limit]
         state.result_tasks = [task for task, _ in result_edges]
         state.clean()
         state.print_state()
 
-    return [formatter.format_tasks(state.source_tasks, state.commits, state.features, state.task_commits, state.result_tasks, result_edges) for
+    return [formatter.format_tasks(state.source_tasks, state.commits, state.features, state.task_commits,
+                                   state.result_tasks, state.edges) for
             formatter in formatters]
 
 
