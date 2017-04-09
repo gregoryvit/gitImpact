@@ -74,6 +74,7 @@ def main(app_options):
         "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=app_options.min_impact_rate, default=0.15),
         "silent": get_option("silent", yaml_config, alt=app_options.silent, default=False),
         "source_dir": app_options.repo_path,
+        "sub_features": get_option("sub_features", yaml_config, default={}),
         "debug_out": get_option("debug", yaml_config, alt=app_options.debug, default=False),
         "task_format": (
             get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))

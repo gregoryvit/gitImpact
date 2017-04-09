@@ -15,6 +15,9 @@ formatter:
       host: "redmine.test.com"
       api_key: "REDMINE_API_KEY"
 
+sub_features:
+  "Path/To/File.txt": '"([^"]+)"'
+
 commits: []
 min_weight: 0.0
 min_impact_rate: 1.0

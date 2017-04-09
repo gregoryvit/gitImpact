@@ -6,6 +6,7 @@ import os
 
 from git import Repo
 from formatters import *
+import re
 
 
 class Task(object):
@@ -151,6 +152,26 @@ class GitImpactAnalysis(object, ImpactAnalysis):
             commits = {}
         return commits
 
+    def __extract_only_affected_lines(self, source_diff):
+        import re
+        result_lines = []
+        need_save = False
+        for line in source_diff.split('\n'):
+            if re.match(r'^diff', line, re.MULTILINE):
+                need_save = False
+            elif re.match(r'^@@', line, re.MULTILINE):
+                need_save = True
+            elif need_save and re.match(r'^\+|^\-', line, re.MULTILINE):
+                result_lines.append(line[1:])
+
+        return "\n".join(result_lines)
+
+    def get_commit_diff(self, commit, file_path):
+        commit_obj = self.repo.commit(commit)
+        if commit_obj.parents:
+            raw_diff = self.repo.git.diff(commit_obj.parents[0].hexsha, commit_obj.hexsha, '-U0', '--', file_path)
+        return self.__extract_only_affected_lines(raw_diff)
+
     def get_tasks_from_commit(self, commit):
         return self.task.parse_tasks(self.repo.commit(commit).message)
 
@@ -229,6 +250,7 @@ class ImpactGraph(object):
         self.source_tasks = {}
         self.commits = {}
         self.features = {}
+        self.sub_features = {}
         self.task_commits = {}
         self.result_tasks = []
         self.edges = {}
@@ -252,6 +274,8 @@ class ImpactGraph(object):
         self.debug_print(self.commits, pretty=True)
         self.debug_print("\nFEATURES:")
         self.debug_print(self.features, pretty=True)
+        self.debug_print("\nSUB FEATURES:")
+        self.debug_print(self.sub_features, pretty=True)
         self.debug_print("\nTASK COMMITS:")
         self.debug_print(self.task_commits, pretty=True)
         self.debug_print("\nRESULT TASKS:")
@@ -324,12 +348,23 @@ def fulfill_source_tasks(impact_state_graph, git_impact_core, commits=[], origin
                 impact_state_graph.source_tasks[original_task.raw_id].append(current_commit)
 
 
-def fulfill_commits(impact_state_graph, git_impact_core, exclude_features):
+def fulfill_commits(impact_state_graph, git_impact_core, exclude_features, sub_features={}):
     for commit, features_list in impact_state_graph.commits.iteritems():
         result_features = git_impact_core.get_affected_files_stats(commit)
         for file_path, affections in result_features.iteritems():
             if file_path in exclude_features:
                 continue
+
+            # If needs filter feature, than extract diff and apply regex to find sub feature
+            if file_path in sub_features:
+                regex = sub_features[file_path]
+                res_diff = git_impact_core.get_commit_diff(commit, file_path)
+                sub_features = set(re.findall(regex, res_diff))
+                if file_path in impact_state_graph.sub_features:
+                    impact_state_graph.sub_features[file_path].update(sub_features)
+                else:
+                    impact_state_graph.sub_features[file_path] = sub_features
+
             if file_path not in features_list:
                 if file_path not in impact_state_graph.features:
                     impact_state_graph.features[file_path] = []
@@ -339,7 +374,7 @@ def fulfill_commits(impact_state_graph, git_impact_core, exclude_features):
                 })
 
 
-def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, check_only_child_commits=True):
+def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, check_only_child_commits=True, sub_features={}):
     if last_commit is None:
         last_commit = git_impact_core.get_last_commit(impact_state_graph.commits.keys())
 
@@ -347,6 +382,21 @@ def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, chec
         feature_file_path = feature
         commits_per_file = git_impact_core.get_commits_per_file(feature_file_path,
                                                                 after=last_commit if check_only_child_commits else None)
+
+        # If needs filter feature, than extract diff and apply regex
+        if feature_file_path in impact_state_graph.sub_features and feature_file_path in sub_features:
+            result_commits_per_file = {}
+            current_sub_features = impact_state_graph.sub_features[feature_file_path]
+            regex = sub_features[feature_file_path]
+
+            for commit_per_file, value in commits_per_file.iteritems():
+                res_diff = git_impact_core.get_commit_diff(commit_per_file, feature_file_path)
+                commit_file_sub_features = set(re.findall(regex, res_diff))
+                intersect_features = current_sub_features.intersection(commit_file_sub_features)
+                if intersect_features:
+                    result_commits_per_file[commit_per_file] = value
+
+            commits_per_file = result_commits_per_file
 
         if feature_file_path not in impact_state_graph.features_total_affections:
             impact_state_graph.features_total_affections[feature_file_path] = sum(
@@ -468,7 +518,8 @@ def calc_impact_in_result_tasks(impact_state_graph, source_files_impact):
 
 def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
               exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1,
-              min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False):
+              min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False,
+              sub_features={}):
     def debug_print(items):
         if not debug_out:
             return
@@ -493,12 +544,13 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
 
     # Fulfill commits
 
-    fulfill_commits(state, git, exclude_features)
+    fulfill_commits(state, git, exclude_features, sub_features=sub_features)
     state.print_state()
 
     # Fulfill features
 
-    fulfill_features(state, git, last_commit=last_commit, check_only_child_commits=check_only_child_commits)
+    fulfill_features(state, git, last_commit=last_commit, check_only_child_commits=check_only_child_commits,
+                     sub_features=sub_features)
     state.print_state()
 
     # Fulfill tasks
@@ -545,7 +597,8 @@ def main(
         exclude_features=[],
         output_filepath=None,
         task_format=('', ''),
-        debug_out=False):
+        debug_out=False,
+        sub_features={}):
     return mainGraph(
         task_id,
         source_dir,
@@ -559,5 +612,6 @@ def main(
         silent=silent,
         debug_out=debug_out,
         limit=limit,
-        task_format=task_format
+        task_format=task_format,
+        sub_features=sub_features
     )
