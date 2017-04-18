@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='gitimpact',
-    version='0.1.0',
+    version='0.2.0',
     packages=['gitimpact', 'gitimpact.issues', 'gitimpact.issues.redmine', 'gitimpact.formatters'],
     url='',
     license='MIT',
@@ -17,7 +17,7 @@ setup(
     },
     install_requires=[
         "gitpython",
-        "python-redmine",
-        "ruamel.yaml"
+        "python-redmine==1.5.1",
+        "ruamel.yaml==0.13.14"
     ]
 )

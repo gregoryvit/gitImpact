@@ -18,6 +18,13 @@ formatter:
 sub_features:
   "Path/To/File.txt": '"([^"]+)"'
 
+features_generators:
+  "Feature/Generator/Source/File/Path":
+    source_regex: '"(.*)"'
+    dest_files:
+      "*.swift": '@%s@'
+      "*.m": '#%s#'
+
 commits: []
 min_weight: 0.0
 min_impact_rate: 1.0

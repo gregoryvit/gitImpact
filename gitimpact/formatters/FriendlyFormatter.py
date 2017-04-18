@@ -7,9 +7,9 @@ class FriendlyFormatter(BaseTasksFormatter):
     def __init__(self, silent, issues_generator, output_filepath):
         BaseTasksFormatter.__init__(self, silent, issues_generator, output_filepath)
 
-    def format_tasks(self, source_tasks, commits, features, task_commits, result_tasks, result_edges):
+    def format_tasks(self, graph):
         result_lines = []
-        print_data = self.prepate_print_data(result_edges)
+        print_data = self.prepate_print_data(graph.edges)
 
         for version, parents in print_data.iteritems():
             result_lines.append(version)

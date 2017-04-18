@@ -45,13 +45,16 @@ def get_formatters(formatter_dict, silent):
     result_formatters = []
     for formatter_key, formatter_options in formatter_dict.iteritems():
         if formatter_key == "graphviz_formatter":
-            result_formatters.append(core.GraphvizFormatter(silent, **formatter_options))
+            from formatters.GraphvizFormatter import GraphvizFormatter
+            result_formatters.append(GraphvizFormatter(silent, **formatter_options))
         elif formatter_key == "redmine_formatter":
+            from formatters.RedmineFormatter import RedmineFormatter
             formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(core.RedmineFormatter(silent, **formatter_options))
+            result_formatters.append(RedmineFormatter(silent, **formatter_options))
         elif formatter_key == "friendly_formatter":
+            from formatters.FriendlyFormatter import FriendlyFormatter
             formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(core.FriendlyFormatter(silent, **formatter_options))
+            result_formatters.append(FriendlyFormatter(silent, **formatter_options))
     return result_formatters
 
 
@@ -75,6 +78,7 @@ def main(app_options):
         "silent": get_option("silent", yaml_config, alt=app_options.silent, default=False),
         "source_dir": app_options.repo_path,
         "sub_features": get_option("sub_features", yaml_config, default={}),
+        "features_generators": get_option("features_generators", yaml_config, default={}),
         "debug_out": get_option("debug", yaml_config, alt=app_options.debug, default=False),
         "task_format": (
             get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))

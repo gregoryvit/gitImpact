@@ -1,13 +1,8 @@
 # coding=utf-8
 __author__ = 'gregoryvit'
 
-import pprint
-import os
-
-from git import Repo
-from formatters import *
+from git import Repo, GitCommandError
 import re
-
 
 class Task(object):
     def __init__(self, id, format='', regex=''):
@@ -130,11 +125,22 @@ class GitImpactAnalysis(object, ImpactAnalysis):
 
     def get_commits_per_file(self, file_path, after=None):
         try:
-            params = ['--numstat', '--format=oneline']
-            if after:
-                params.append(after)
-            params.extend(['--follow', file_path])
-            message = self.repo.git.log(*params)
+            try:
+                params = ['--numstat', '--format=oneline']
+                if after:
+                    params.append(after)
+                params.extend(['--follow', file_path])
+                message = self.repo.git.log(*params)
+            except GitCommandError as e:
+                if e.status == 128:
+                    params = ['--numstat', '--format=oneline']
+                    if after:
+                        params.append(after)
+                    params.extend(['--', file_path])
+                    message = self.repo.git.log(*params)
+                else:
+                    raise Exception()
+
             lines = message.split('\n')
             groups = zip(lines[::2], lines[1::2])
 
@@ -149,6 +155,7 @@ class GitImpactAnalysis(object, ImpactAnalysis):
                        commit_str, stats in groups}
         except Exception as e:
             # print "%s\n" % e
+
             commits = {}
         return commits
 
@@ -171,6 +178,47 @@ class GitImpactAnalysis(object, ImpactAnalysis):
         if commit_obj.parents:
             raw_diff = self.repo.git.diff(commit_obj.parents[0].hexsha, commit_obj.hexsha, '-U0', '--', file_path)
         return self.__extract_only_affected_lines(raw_diff)
+
+    def get_total_affections(self, file_path, after=None):
+        all_commits_per_file = self.get_commits_per_file(file_path, after=after)
+        result_affections = sum(
+            [int(value['additions']) + int(value['deletions']) for value in all_commits_per_file.values()])
+        return result_affections
+
+    def get_commits_by_diff_contains(self, search_term, after=None):
+        try:
+            params = ['--numstat', '--format=oneline']
+            params.extend(["-S", search_term])
+            if after:
+                params.append(after)
+            message = self.repo.git.log(*params)
+            lines = message.split('\n')
+
+            result_commits = {}
+            current_commit = None
+            current_commit_stats = None
+            for line in lines:
+                commit_m = re.findall(r'^([0-9a-f]{40})', line, flags=re.MULTILINE)
+                if commit_m:
+                    current_commit = commit_m[0]
+                    result_commits[current_commit] = []
+                    current_commit_stats = self.get_affected_files_stats(current_commit)
+                    continue
+                file_stats_m = re.findall(r'^([0-9]+)\t([0-9]+)\t(.+)', line, flags=re.MULTILINE)
+                for additions, deletions, file_path in file_stats_m:
+                    if file_path in current_commit_stats:
+                        file_stats = current_commit_stats[file_path]
+                        result_commits[current_commit].append({
+                            "additions": file_stats["insertions"],
+                            "deletions": file_stats["deletions"],
+                            "file_path": file_path
+                        })
+
+            commits = result_commits
+        except Exception as e:
+            # print "%s\n" % e
+            commits = {}
+        return commits
 
     def get_tasks_from_commit(self, commit):
         return self.task.parse_tasks(self.repo.commit(commit).message)
@@ -337,6 +385,42 @@ class ImpactGraph(object):
         #
         # Dict in format:
         #   {
+        #       file_path: set([
+        #           'generator_identifier'
+        #       ])
+        #   }
+        # Example:
+        #   {
+        #       u'Path/To/File.txt': set([
+        #           u'3116A2701E8DA56300A2336F',
+        #           u'3116A2711E8DA56300A2336F',
+        #           u'3116A2721E8DA62300A2336F'
+        #       ])
+        #   }
+        #
+        self.generator_ids = {}
+
+        #
+        # Dict in format:
+        #   {
+        #       generator_id: [{
+        #           'commit': commit_hex_sha
+        #       }]
+        #   }
+        # Example:
+        #   {
+        #       u'lalala': [
+        #           {
+        #               'commit': u'fd8f24a5055f35013b0962bbfc2ab95776d5e230'
+        #           }
+        #       ]
+        #   }
+        #
+        self.generator_commits = {}
+
+        #
+        # Dict in format:
+        #   {
         #       commit_hex_sha: [
         #           Task
         #       ]
@@ -394,6 +478,10 @@ class ImpactGraph(object):
         self.debug_print(self.features, pretty=True)
         self.debug_print("\nSUB FEATURES:")
         self.debug_print(self.sub_features, pretty=True)
+        self.debug_print("\nGENERATOR IDS:")
+        self.debug_print(self.generator_ids, pretty=True)
+        self.debug_print("\nGENERATOR COMMITS:")
+        self.debug_print(self.generator_commits, pretty=True)
         self.debug_print("\nTASK COMMITS:")
         self.debug_print(self.task_commits, pretty=True)
         self.debug_print("\nRESULT TASKS:")
@@ -422,6 +510,12 @@ class ImpactGraph(object):
                 for commit_dict in self.features[feature]
                 if commit_dict["commit"] not in commits_to_delete
                 ]
+        for gen_id in self.generator_commits.keys():
+            self.generator_commits[gen_id] = [
+                commit_dict
+                for commit_dict in self.generator_commits[gen_id]
+                if commit_dict["commit"] not in commits_to_delete
+                ]
 
         # Clean features
         features_to_delete = [feature for feature, feature_commits in self.features.iteritems() if not feature_commits]
@@ -448,6 +542,13 @@ class ImpactGraph(object):
                 if task_commit not in input_commits_to_delete
                 ]
 
+        # Clean sub features
+
+        sub_features_to_delete = [feature for feature in self.sub_features.keys() if feature not in self.features.keys()]
+        for sub_feature in sub_features_to_delete:
+            del self.sub_features[sub_feature]
+
+
 
 # Fulfill
 
@@ -467,7 +568,7 @@ def fulfill_source_tasks(impact_state_graph, git_impact_core, commits=[], origin
                 impact_state_graph.source_tasks[original_task.raw_id].append(current_commit)
 
 
-def fulfill_commits(impact_state_graph, git_impact_core, exclude_features, sub_features={}):
+def fulfill_commits(impact_state_graph, git_impact_core, exclude_features, sub_features={}, features_generators={}):
     for commit, features_list in impact_state_graph.commits.iteritems():
         result_features = git_impact_core.get_affected_files_stats(commit)
         for file_path, affections in result_features.iteritems():
@@ -478,11 +579,21 @@ def fulfill_commits(impact_state_graph, git_impact_core, exclude_features, sub_f
             if file_path in sub_features:
                 regex = sub_features[file_path]
                 res_diff = git_impact_core.get_commit_diff(commit, file_path)
-                sub_features = set(re.findall(regex, res_diff))
+                l_sub_features = set(re.findall(regex, res_diff))
                 if file_path in impact_state_graph.sub_features:
-                    impact_state_graph.sub_features[file_path].update(sub_features)
+                    impact_state_graph.sub_features[file_path].update(l_sub_features)
                 else:
-                    impact_state_graph.sub_features[file_path] = sub_features
+                    impact_state_graph.sub_features[file_path] = l_sub_features
+
+            # Get features generator
+            if file_path in features_generators:
+                regex = features_generators[file_path]['source_regex']
+                res_diff = git_impact_core.get_commit_diff(commit, file_path)
+                generator_ids = set(re.findall(regex, res_diff))
+                if file_path in impact_state_graph.generator_ids:
+                    impact_state_graph.generator_ids[file_path].update(generator_ids)
+                else:
+                    impact_state_graph.generator_ids[file_path] = generator_ids
 
             if file_path not in features_list:
                 if file_path not in impact_state_graph.features:
@@ -493,9 +604,12 @@ def fulfill_commits(impact_state_graph, git_impact_core, exclude_features, sub_f
                 })
 
 
-def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, check_only_child_commits=True, sub_features={}):
+def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, check_only_child_commits=True,
+                     sub_features={}, features_generators={}):
     if last_commit is None:
         last_commit = git_impact_core.get_last_commit(impact_state_graph.commits.keys())
+
+    generated_commits = {}
 
     for feature, feature_commits in impact_state_graph.features.iteritems():
         feature_file_path = feature
@@ -517,6 +631,31 @@ def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, chec
 
             commits_per_file = result_commits_per_file
 
+        # Generate features if needed
+        if feature_file_path in impact_state_graph.generator_ids and feature_file_path in features_generators:
+            generator_ids = impact_state_graph.generator_ids[feature_file_path]
+            feature_generator = features_generators[feature_file_path]
+
+            for file_path_regex, format in feature_generator['dest_files'].iteritems():
+                for sub_feature in generator_ids:
+                    formatted_str_to_search = format.format(sub_feature)
+                    commits_per_diff_search = git_impact_core.get_commits_by_diff_contains(formatted_str_to_search,
+                                                                                           after=last_commit if check_only_child_commits else None)
+                    impact_state_graph.generator_commits[sub_feature] = [
+                        {
+                            'commit': commit,
+                            'file_path': commit_file_dict['file_path'],
+                            'affections': {
+                                'additions': commit_file_dict['additions'],
+                                'deletions': commit_file_dict['deletions']
+                            }
+                        }
+                        for commit, commit_files in commits_per_diff_search.iteritems() for commit_file_dict in commit_files
+                    ]
+
+                    generated_commits.update(commits_per_diff_search)
+
+        # Calc affections
         if feature_file_path not in impact_state_graph.features_total_affections:
             impact_state_graph.features_total_affections[feature_file_path] = sum(
                 [int(value['additions']) + int(value['deletions']) for value in commits_per_file.values()])
@@ -539,6 +678,45 @@ def fulfill_features(impact_state_graph, git_impact_core, last_commit=None, chec
                     impact_state_graph.task_commits[feature_commit] = []
 
                 feature_commits.append(feature_commit_dict)
+
+    # Process generated features
+
+    def add_features_to(features_to_add, source_features):
+        for adding_feature, commits_dicts in features_to_add.iteritems():
+            if adding_feature not in source_features:
+                source_features[adding_feature] = commits_dicts
+                continue
+
+            source_features[adding_feature].extend(commits_dicts)
+
+    features_to_add = {}
+    for commit, feature_affections_dicts in generated_commits.iteritems():
+        features_dict = {
+            feature_file_path_dict["file_path"]: [{
+                'affections': {
+                    'additions': feature_file_path_dict['additions'],
+                    'deletions': feature_file_path_dict['deletions']
+                },
+                'commit': commit}]
+            for feature_file_path_dict in feature_affections_dicts
+        }
+
+        # Add total
+        for feature_file_path, commits_dicts in features_dict.iteritems():
+            if feature_file_path not in impact_state_graph.features_total_affections:
+                impact_state_graph.features_total_affections[feature_file_path] = git_impact_core.get_total_affections(feature_file_path,
+                                                                after=last_commit if check_only_child_commits else None)
+            total_affections = impact_state_graph.features_total_affections[feature_file_path]
+            for commit_dict in commits_dicts:
+                commit_dict['total_affections'] = total_affections
+        add_features_to(features_dict, features_to_add)
+
+    add_features_to(features_to_add, impact_state_graph.features)
+    for commit in generated_commits.keys():
+        if commit not in impact_state_graph.task_commits:
+            impact_state_graph.task_commits[commit] = []
+
+
 
 
 def fulfill_tasks(impact_state_graph, git_impact_core, exclude_task_ids):
@@ -568,8 +746,11 @@ def calc_impact_in_source_tasks(impact_state_graph):
                 feature_file_path = feature_dict["file_path"]
                 if feature_file_path in impact_state_graph.features_total_affections:
                     total_affections = impact_state_graph.features_total_affections[feature_file_path]
-                    impact = float(feature_dict["affections"]["insertions"] + feature_dict["affections"][
-                        "deletions"]) / total_affections
+                    if total_affections != 0:
+                        impact = float(feature_dict["affections"]["insertions"] + feature_dict["affections"][
+                            "deletions"]) / total_affections
+                    else:
+                        impact = 0.0
                     feature = feature_dict["file_path"]
                     if feature in result_features:
                         result_features[feature]["impact_level"] += impact
@@ -605,9 +786,15 @@ def calc_impact_in_result_tasks(impact_state_graph, source_files_impact):
                 f_commits = [f_dict for f_dict in feature_commits if f_dict["commit"] == commit]
                 if f_commits:
                     f_commit = f_commits[0]
-                    impact = float(f_commit["affections"]["additions"] + f_commit["affections"]["deletions"]) / \
-                             f_commit["total_affections"]
-                    result_impact = impact / (1.0 - source_files_impact[feature])
+                    if f_commit["total_affections"] != 0:
+                        impact = float(f_commit["affections"]["additions"] + f_commit["affections"]["deletions"]) / \
+                                f_commit["total_affections"]
+                    else:
+                        impact = 1.0
+                    if feature in source_files_impact:
+                        result_impact = impact / (1.0 - source_files_impact[feature])
+                    else:
+                        result_impact = impact
                     if feature in result_features:
                         result_features[feature]["impact_level_exclude_source"] += result_impact
                         result_features[feature]["impact_level"] += impact
@@ -638,7 +825,7 @@ def calc_impact_in_result_tasks(impact_state_graph, source_files_impact):
 def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
               exclude_task_ids=[], exclude_features=[], out_file_path=None, commits=[], min_weight=0.1,
               min_impact_rate=0.15, silent=False, limit=None, task_format=('', ''), last_commit=None, debug_out=False,
-              sub_features={}):
+              sub_features={}, features_generators={}):
     def debug_print(items):
         if not debug_out:
             return
@@ -663,13 +850,13 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
 
     # Fulfill commits
 
-    fulfill_commits(state, git, exclude_features, sub_features=sub_features)
+    fulfill_commits(state, git, exclude_features, sub_features=sub_features, features_generators=features_generators)
     state.print_state()
 
     # Fulfill features
 
     fulfill_features(state, git, last_commit=last_commit, check_only_child_commits=check_only_child_commits,
-                     sub_features=sub_features)
+                     sub_features=sub_features, features_generators=features_generators)
     state.print_state()
 
     # Fulfill tasks
@@ -698,9 +885,7 @@ def mainGraph(task_id, source_dir, formatters, check_only_child_commits,
         state.clean()
         state.print_state()
 
-    return [formatter.format_tasks(state.source_tasks, state.commits, state.features, state.task_commits,
-                                   state.result_tasks, state.edges) for
-            formatter in formatters]
+    return [formatter.format_tasks(state) for formatter in formatters]
 
 
 def main(
@@ -718,7 +903,8 @@ def main(
         output_filepath=None,
         task_format=('', ''),
         debug_out=False,
-        sub_features={}):
+        sub_features={},
+        features_generators={}):
     return mainGraph(
         task_id,
         source_dir,
@@ -733,5 +919,6 @@ def main(
         debug_out=debug_out,
         limit=limit,
         task_format=task_format,
-        sub_features=sub_features
+        sub_features=sub_features,
+        features_generators=features_generators
     )
