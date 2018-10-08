@@ -1,33 +1,6 @@
-excluded_tasks: # List of tasks ids to exclude
-
-exclude_features: # List of file paths to exclude
-  - "Podfile"
-  - "Podfile.lock"
-
-task_format:
-  output_format: "#{}"
-  parse_regex: "#([0-9]+)"
-
-formatter:
-  redmine_formatter:
-    output_filepath: "~/RedmineFormatterOutput.txt"
-    issues_generator:
-      host: "redmine.test.com"
-      api_key: "REDMINE_API_KEY"
-
-sub_features:
-  "Path/To/File.txt": '"([^"]+)"'
-
-features_generators:
-  "Feature/Generator/Source/File/Path":
-    source_regex: '"(.*)"'
-    dest_files:
-      "*.swift": '@%s@'
-      "*.m": '#%s#'
-
-commits: []
-min_weight: 0.0
-min_impact_rate: 1.0
-check_all_commits: false
-silent: false
-limit: 10
+commit: "508e023ac14922538883a9542f355ea980324738" # SHA of commit
+repo_path: "/Users/gregoryvit/Development/Surf/ios/twim-ios" # Path to repo with git repo
+limit: 20 # Max results count. Default returns all results
+commits_depth: 2000 # Max depth of child commits. Default analyze all child commits
+check_all_commits: false # Check not only previous commits. Default false
+debug: false # Enable/disable debug mode. Default false

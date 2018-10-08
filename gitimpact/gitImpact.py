@@ -1,6 +1,11 @@
 # coding=utf-8
+import os
 
-import core
+from git import Repo
+
+from gitimpact.core import ImpactAnalyser
+from gitimpact.core.addons.git import GitRepoLoader, GitUtils
+from gitimpact.core.calc.calc import NPNewCosineSimilarityCalculator
 
 CONFIG_FILENAME = ".gitimpact.yml"
 CONFIG_TEMPLATE_FILE_PATH = "templates/init_template.yml"
@@ -28,69 +33,62 @@ def get_option(option, config, alt=None, default=None):
     if alt is not None and alt != default:
         return alt
 
-    if option in config:
+    if config and option in config:
         return config[option]
 
     return default
 
 
-def get_formatters(formatter_dict, silent):
-    def get_redmine_generator(key):
-        if "issues_generator" in formatter_dict[key]:
-            from issues.redmine import RedmineIssuesGenerator
+def calc_commit_impact(commit_sha, repo_path, results_count=10, commits_depth=50, check_all_commits=False, debug=False,
+                       short_out=False):
+    repo = Repo.init(repo_path)
+    git_worker = GitRepoLoader(repo)
+    ia = ImpactAnalyser()
 
-            generator_options = formatter_dict[key]["issues_generator"]
-            return RedmineIssuesGenerator(generator_options["host"], generator_options["api_key"])
+    test_git_commit = repo.commit(commit_sha)
+    test_item = GitUtils.commit_to_container(test_git_commit, repo)
 
-    result_formatters = []
-    for formatter_key, formatter_options in formatter_dict.iteritems():
-        if formatter_key == "graphviz_formatter":
-            from formatters.GraphvizFormatter import GraphvizFormatter
-            result_formatters.append(GraphvizFormatter(silent, **formatter_options))
-        elif formatter_key == "redmine_formatter":
-            from formatters.RedmineFormatter import RedmineFormatter
-            formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(RedmineFormatter(silent, **formatter_options))
-        elif formatter_key == "friendly_formatter":
-            from formatters.FriendlyFormatter import FriendlyFormatter
-            formatter_options["issues_generator"] = get_redmine_generator(formatter_key)
-            result_formatters.append(FriendlyFormatter(silent, **formatter_options))
-    return result_formatters
+    calc_type = NPNewCosineSimilarityCalculator
+
+    all_items = git_worker.load_commits(test_git_commit, commits_depth=commits_depth if not check_all_commits else None)
+
+    if not short_out:
+        print(u"\033[1mOriginal item:\033[0m\n%s\n\t%s\n" % (test_item.name, test_item.message.replace('\n', '\n\t')))
+
+    results = ia.impact_analysis_for_commit(test_item, all_items, results_count=results_count, debug=debug,
+                                            calculator_type=calc_type)
+
+    if not short_out:
+        print(u"\033[1mResults:\033[0m")
+    for container, distance in results:
+        impact = 1.0 - distance
+        if distance >= 1.0:
+            continue
+        if short_out:
+            print(u'%s\t%f' % (container.name, impact))
+        else:
+            print(u'item \033[1m%s\033[0m (impact: \033[1m%f\033[0m)\n%s' % (container.name, impact, container.message.replace('\n', '\n\t')))
 
 
 def main(app_options):
+    yaml_config = None
     try:
         yaml_config = parse_yaml(app_options.yaml_config_file)
     except IOError as e:
         print "Configuration file not found. Run `gitimpact init` to create it"
         exit(1)
 
-    task_format = get_option("task_format", yaml_config, default={})
-
     result_options = {
-        "excluded_tasks": get_option("excluded_tasks", yaml_config, default=[]),
-        "exclude_features": get_option("exclude_features", yaml_config, default=[]),
-        "output_filepath": get_option("output_filepath", yaml_config),
-        "task_id": get_option("task_id", yaml_config, alt=app_options.task_id),
-        "commits": get_option("commits", yaml_config, alt=app_options.commit, default=[]),
-        "min_weight": float(get_option("min_weight", yaml_config, alt=app_options.min_weight, default=0.1)),
-        "min_impact_rate": get_option("min_impact_rate", yaml_config, alt=app_options.min_impact_rate, default=0.15),
-        "silent": get_option("silent", yaml_config, alt=app_options.silent, default=False),
-        "source_dir": app_options.repo_path,
-        "sub_features": get_option("sub_features", yaml_config, default={}),
-        "features_generators": get_option("features_generators", yaml_config, default={}),
-        "debug_out": get_option("debug", yaml_config, alt=app_options.debug, default=False),
-        "task_format": (
-            get_option("output_format", task_format, default=""), get_option("parse_regex", task_format, default=""))
+        "commit_sha": get_option("commit", yaml_config, alt=app_options.commit),
+        "repo_path": get_option("repo_path", yaml_config, alt=app_options.repo_path, default=os.getcwd()),
+        "results_count": int(get_option("limit", yaml_config, alt=app_options.limit, default=-1)),
+        "commits_depth": int(get_option("commits_depth", yaml_config, alt=app_options.commits_depth, default=-1)),
+        "check_all_commits": bool(
+            get_option("check_all_commits", yaml_config, alt=app_options.check_all_commits, default=False)),
+        "debug": get_option("debug", yaml_config, alt=app_options.debug, default=False),
+        "short_out": get_option("short_out", yaml_config, alt=app_options.short_out, default=False),
     }
 
-    check_all_commits = get_option("check_all_commits", yaml_config, alt=app_options.check_all_commits, default=False)
-    result_options["check_only_child_commits"] = (not bool(check_all_commits))
-    result_options["formatters"] = get_formatters(get_option("formatter", yaml_config, default={}),
-                                                  result_options["silent"])
+    # print(result_options)
 
-    limit = get_option("limit", yaml_config, alt=app_options.limit)
-    if limit:
-        result_options["limit"] = int(limit)
-
-    return core.main(**result_options)
+    calc_commit_impact(**result_options)
