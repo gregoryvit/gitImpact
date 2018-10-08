@@ -75,8 +75,6 @@ class GitDiffExtractor:
 
         out_str = out.decode('utf-8')
 
-        #         print(out_str)
-
         return self.process_diff_out(out_str)
 
 
@@ -162,7 +160,15 @@ class GitRepoLoader:
             return True
 
         def get_previous_commits(cur_commit, commits_count=50):
-            return list(self.repo.iter_commits(cur_commit.hexsha + '~1', max_count=commits_count))
+            rev = cur_commit.hexsha + '~1'
+            max_count = -1
+
+            if commits_count is None:
+                rev = None
+            elif commits_count >= 0:
+                max_count = commits_count
+
+            return list(self.repo.iter_commits(rev, max_count=max_count))
 
         previous_commits = get_previous_commits(commit, commits_count=commits_depth)
         previous_commits = filter(filter_commit, previous_commits)

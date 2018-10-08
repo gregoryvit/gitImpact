@@ -7,37 +7,38 @@ import sys
 
 from gitimpact import gitImpact
 
+
+def perform_init():
+    gitImpact.create_config_file(os.getcwd())
+
+
 if __name__ == "__main__":
     sub_command = ""
     if len(sys.argv) > 1:
         sub_command = sys.argv[1]
 
     if sub_command == 'init':
-        gitImpact.create_config_file(os.getcwd())
+        perform_init()
         exit(0)
 
     parser = OptionParser()
-    parser.add_option("-t", "--task", dest="task_id",
-                      help="redmine task identifier")
-    parser.add_option("-c", "--commit", dest="commit", default=[], type=str, action='append',
+    parser.add_option("-c", "--commit", dest="commit", type=str,
                       help="SHA of commit")
-    parser.add_option("--min_weight", dest="min_weight", default=0.1,
-                      help=u'Минимальный вес возвращаемых тасков.')
-    parser.add_option("--min_impact_rate", dest="min_impact_rate", default=0.15,
-                      help=u'Если кол-во затронутых тасков для файла больше 15% от общего числа тасков, то пропускаем. 1 – все файлы, 0 – без файлов')
-    parser.add_option("--all_commits", dest="check_all_commits", action="store_true", default=False,
+    parser.add_option("--all_commits", dest="check_all_commits", action="store_true",
                       help=u'By default gitimpact checks only child commits')
-    parser.add_option("--silent", dest="silent", action="store_true", default=False,
-                      help=u'Print only formatted result')
-    parser.add_option("-n", dest="limit", default=None,
+    parser.add_option("-n", dest="limit",
                       help=u'Result issues count')
+    parser.add_option("--commits_depth", dest="commits_depth",
+                      help=u'Number of child commits. By default check all child commits')
     parser.add_option("--config", dest="yaml_config_file", default=os.path.join(os.getcwd(), gitImpact.CONFIG_FILENAME),
                       help=u'Path to yaml configuration file')
-    parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
+    parser.add_option("--repo", dest="repo_path",
                       help=u'Path to git repository')
-    parser.add_option("--debug", dest="debug", action="store_true", default=False,
+    parser.add_option("--debug", dest="debug", action="store_true",
                       help=u'Print debug logs')
+    parser.add_option("--short", dest="short_out", action="store_true",
+                      help=u'Print only results')
 
     (options, _) = parser.parse_args()
 
-    print gitImpact.main(options)
+    gitImpact.main(options)
