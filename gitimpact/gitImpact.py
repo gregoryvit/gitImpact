@@ -46,7 +46,7 @@ def calc_commit_impact(commit_sha, repo_path, results_count=10, commits_depth=50
     ia = ImpactAnalyser()
 
     test_git_commit = repo.commit(commit_sha)
-    test_item = GitUtils.commit_to_container(test_git_commit, repo)
+    test_item = GitUtils.commit_to_container(test_git_commit)
 
     calc_type = NPNewCosineSimilarityCalculator
 
