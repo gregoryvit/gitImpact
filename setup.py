@@ -22,6 +22,8 @@ setup(
         "ruamel.yaml==0.13.14",
         "sklearn",
         "pandas",
-        "numpy"
+        "numpy",
+        "reprint",
+        "futures"
     ]
 )

@@ -6,10 +6,29 @@ import os
 import sys
 
 from gitimpact import gitImpact
+from gitimpact import gitRealtimeImpact
 
 
 def perform_init():
     gitImpact.create_config_file(os.getcwd())
+
+
+def perform_realtime_mode():
+    parser = OptionParser()
+    parser.add_option("-n", dest="results_count", default=5,
+                      help=u'Result issues count')
+    parser.add_option("-i", dest="interval", default=1,
+                      help=u'Update interval in seconds')
+    parser.add_option("--commits_depth", dest="commits_depth", default=-1,
+                      help=u'Number of child commits. By default check all child commits')
+    parser.add_option("--repo", dest="repo_path", default=os.getcwd(),
+                      help=u'Path to git repository')
+    parser.add_option("--debug", dest="debug", action="store_true", default=False,
+                      help=u'Print debug logs')
+
+    (options, _) = parser.parse_args()
+
+    gitRealtimeImpact.main(options)
 
 
 if __name__ == "__main__":
@@ -19,6 +38,10 @@ if __name__ == "__main__":
 
     if sub_command == 'init':
         perform_init()
+        exit(0)
+
+    if sub_command == 'realtime':
+        perform_realtime_mode()
         exit(0)
 
     parser = OptionParser()
