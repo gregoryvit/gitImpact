@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='gitimpact',
-    version='0.5.0',
+    version='0.6.0',
     packages=['gitimpact', 'gitimpact.core',
               'gitimpact.core.calc', 'gitimpact.core.addons'],
     url='',
@@ -17,13 +17,13 @@ setup(
         'gitimpact': ['templates/*']
     },
     install_requires=[
-        "gitpython",
+        "gitpython==2.1.11",
         "python-redmine==1.5.1",
         "ruamel.yaml==0.13.14",
-        "sklearn",
-        "pandas",
-        "numpy",
-        "reprint",
-        "futures"
+        "sklearn==0.0",
+        "pandas==0.23.4",
+        "numpy==1.15.2",
+        "reprint==0.5.1",
+        "futures==3.2.0"
     ]
 )
