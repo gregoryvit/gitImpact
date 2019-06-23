@@ -1,3 +1,4 @@
+# coding=utf-8
 from ..calc.base import Atom, Container, HashContainer
 import re
 import subprocess
@@ -222,9 +223,14 @@ class GitRepoLoader:
         self.repo = repo
 
     def load_commits(self, commit=None, commits_depth=50):
+        def is_merge(c):
+            # res = re.match(r'^[Mm]erge.*', c.message)
+            parents_count = len(c.parents)
+            return parents_count > 1
+
         def filter_commit(cur_commit):
             message = cur_commit.message
-            if message.startswith('Merge') or \
+            if is_merge(cur_commit) or \
                     message.startswith('Version Bump'):
                 return False
             return True
