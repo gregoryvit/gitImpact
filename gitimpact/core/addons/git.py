@@ -140,6 +140,42 @@ class StringsFileAtomBuilder:
         return result_atoms
 
 
+class PBXProjFileAtomBuilder:
+    ''' Build atoms based on identifiers from pbxproj file '''
+    def __init__(self, git_file_atom):
+        self.file_path = git_file_atom.file_path
+        self.git_stats = git_file_atom.stats
+        self.repo = git_file_atom.commit.repo
+        self.commit = git_file_atom.commit
+        self.full_path = os.path.join(self.repo.working_dir, self.file_path)
+
+        diff_extractor = GitDiffExtractor(self.repo)
+        self.diff_code_blocks = [block for block in diff_extractor.diff_versions(self.commit) if
+                                 block['in_file'].endswith(self.file_path)]
+
+    @property
+    def atoms(self):
+        result_atoms = []
+        for code_block in self.diff_code_blocks:
+            for code_line in code_block['code'].split('\n'):
+                ids = re.findall(r'[0-9A-F]{24}', code_line, flags=re.MULTILINE)
+
+                # if not ids:
+                #     ids = [None]
+
+                def make_atom(item_id):
+                    if item_id is None:
+                        name = self.file_path
+                    else:
+                        name = "%s@%s" % (self.file_path, item_id)
+                    return Atom(name, name, [])
+
+                res_atoms = [make_atom(cur_id) for cur_id in ids]
+
+                result_atoms.extend(res_atoms)
+        return result_atoms
+
+
 class GitAtom(Atom):
     def __init__(self, commit):
         self.value = "commit:" + commit.hexsha
@@ -245,6 +281,7 @@ class AtomsBuilder:
                 "^git_status$": atoms_builder(GitStatusAtomBuilder),
                 "^commit:.*$": commit,
                 "^git_file:.*\.strings$": atoms_builder(StringsFileAtomBuilder),
+                "^git_file:.*\project.pbxproj": atoms_builder(PBXProjFileAtomBuilder),
                 "^git_file:.*$": atoms_builder(GitDiffAtomBuilder),
             }
         else:
