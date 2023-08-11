@@ -17,7 +17,7 @@ setup(
         'gitimpact': ['templates/*']
     },
     install_requires=[
-        "gitpython==2.1.11",
+        "gitpython==3.1.32",
         "python-redmine==1.5.1",
         "ruamel.yaml==0.13.14",
         "sklearn==0.0",
